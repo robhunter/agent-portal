@@ -37,6 +37,7 @@ function bootPortal(configOverrides = {}) {
   require('../lib/routes/requests').register(routes, config);
   require('../lib/routes/projects').register(routes, config);
   require('../lib/routes/outputs').register(routes, config);
+  require('../lib/routes/deploy').register(routes, config);
 
   const getHTML = () => buildHTML(config);
 
