@@ -26,6 +26,7 @@ function createTestServer(configOverrides = {}) {
   require('../lib/routes/journal').register(routes, config);
   require('../lib/routes/events').register(routes, config);
   require('../lib/routes/github').register(routes, config);
+  require('../lib/routes/cycle').register(routes, config);
 
   return { server: createServer(config, { routes, getHTML: () => '<html>test</html>' }), config };
 }
@@ -264,5 +265,89 @@ describe('GET /api/github/* (no repos configured)', () => {
     assert.equal(status, 200);
     assert.ok(Array.isArray(data.items));
     assert.equal(data.items.length, 0);
+  });
+});
+
+describe('POST /api/cron/toggle', () => {
+  let server, port, tmpDir;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-cron-test-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+    const cronFile = path.join(tmpDir, 'test-cron');
+    fs.writeFileSync(cronFile, '# cron test\n0 */2 * * * root bash /root/scripts/wake.sh\n');
+
+    const result = createTestServer({ agentDir: tmpDir, cronFile });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('disables cron by commenting wake.sh line', async () => {
+    const { status, data } = await fetchJSON(port, '/api/cron/toggle', {
+      method: 'POST',
+    });
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
+    assert.equal(data.enabled, false);
+  });
+
+  it('enables cron by uncommenting wake.sh line', async () => {
+    const { status, data } = await fetchJSON(port, '/api/cron/toggle', {
+      method: 'POST',
+    });
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
+    assert.equal(data.enabled, true);
+  });
+});
+
+describe('POST /api/cycle/run', () => {
+  let server, port;
+
+  before(async () => {
+    // Use a lock file that won't exist (so lock check says "not running")
+    const result = createTestServer({ lockFile: '/tmp/test-portal-lock-nonexistent-cycle' });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => server.close());
+
+  it('returns 200 when no cycle is running (wake.sh may not exist but spawn succeeds)', async () => {
+    const { status, data } = await fetchJSON(port, '/api/cycle/run', {
+      method: 'POST',
+    });
+    // Should return 200 OK (spawn will succeed even if script doesn't exist)
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
+  });
+});
+
+describe('POST /api/cycle/respond', () => {
+  let server, port;
+
+  before(async () => {
+    const result = createTestServer({ lockFile: '/tmp/test-portal-lock-nonexistent-respond' });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => server.close());
+
+  it('returns 404 when respond.sh does not exist', async () => {
+    const { status, data } = await fetchJSON(port, '/api/cycle/respond', {
+      method: 'POST',
+    });
+    assert.equal(status, 404);
+    assert.ok(data.error.includes('respond.sh not found'));
   });
 });

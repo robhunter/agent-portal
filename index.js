@@ -51,6 +51,7 @@ require('./lib/routes/status').register(routes, config);
 require('./lib/routes/journal').register(routes, config);
 require('./lib/routes/events').register(routes, config);
 require('./lib/routes/github').register(routes, config);
+require('./lib/routes/cycle').register(routes, config);
 
 // Build HTML page (cached — config doesn't change at runtime)
 let cachedHTML;
