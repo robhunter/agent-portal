@@ -133,4 +133,36 @@ describe('buildHTML', () => {
     assert.ok(html.includes('id="cycle-status"'));
     assert.ok(html.includes('data.cycleRunning'));
   });
+
+  it('includes roadmap tab JS when configured', () => {
+    const config = {
+      ...baseConfig,
+      features: { tabs: ['journal', 'roadmap', 'status'], roadmap: true },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('data-tab="roadmap"'));
+    assert.ok(html.includes('function loadRoadmap'));
+    assert.ok(html.includes('roadmap: loadRoadmap'));
+  });
+
+  it('excludes roadmap tab JS when not configured', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(!html.includes('function loadRoadmap'));
+  });
+
+  it('includes health tab JS when configured', () => {
+    const config = {
+      ...baseConfig,
+      features: { tabs: ['journal', 'health', 'status'], health: true },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('data-tab="health"'));
+    assert.ok(html.includes('function loadHealth'));
+    assert.ok(html.includes('health: loadHealth'));
+  });
+
+  it('excludes health tab JS when not configured', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(!html.includes('function loadHealth'));
+  });
 });

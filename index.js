@@ -52,6 +52,8 @@ require('./lib/routes/journal').register(routes, config);
 require('./lib/routes/events').register(routes, config);
 require('./lib/routes/github').register(routes, config);
 require('./lib/routes/cycle').register(routes, config);
+require('./lib/routes/roadmap').register(routes, config);
+require('./lib/routes/health').register(routes, config);
 
 // Build HTML page (cached — config doesn't change at runtime)
 let cachedHTML;
