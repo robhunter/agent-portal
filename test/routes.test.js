@@ -30,6 +30,7 @@ function createTestServer(configOverrides = {}) {
   require('../lib/routes/roadmap').register(routes, config);
   require('../lib/routes/health').register(routes, config);
   require('../lib/routes/requests').register(routes, config);
+  require('../lib/routes/projects').register(routes, config);
 
   return { server: createServer(config, { routes, getHTML: () => '<html>test</html>' }), config };
 }
@@ -579,6 +580,176 @@ describe('POST /api/requests/reply', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ file: 'nonexistent.md', comment: 'Hello' }),
     });
+    assert.equal(status, 404);
+    assert.ok(data.error.includes('not found'));
+  });
+});
+
+// --- Project routes ---
+
+describe('GET /api/projects', () => {
+  it('returns project list sorted by priority when sidebar.type is projects', async () => {
+    const result = createTestServer({
+      sidebar: { type: 'projects', projectsDir: 'projects' },
+    });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/projects');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(data));
+    assert.equal(data.length, 3);
+    // Sorted: high, medium, low
+    assert.equal(data[0].priority, 'high');
+    assert.equal(data[0].slug, 'alpha-feature');
+    assert.equal(data[0].title, 'Alpha Feature');
+    assert.equal(data[0].entryCount, 3);
+    assert.ok(data[0].lastActivity);
+    assert.equal(data[1].priority, 'medium');
+    assert.equal(data[1].slug, 'beta-cleanup');
+    assert.equal(data[2].priority, 'low');
+    assert.equal(data[2].slug, 'gamma-docs');
+
+    server.close();
+  });
+
+  it('returns 404 when sidebar.type is not projects', async () => {
+    const result = createTestServer({ features: {} });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status } = await fetchJSON(port, '/api/projects');
+    assert.equal(status, 404);
+
+    server.close();
+  });
+
+  it('parses frontmatter tags as arrays', async () => {
+    const result = createTestServer({
+      sidebar: { type: 'projects', projectsDir: 'projects' },
+    });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { data } = await fetchJSON(port, '/api/projects');
+    const alpha = data.find(p => p.slug === 'alpha-feature');
+    assert.ok(Array.isArray(alpha.tags));
+    assert.deepEqual(alpha.tags, ['backend', 'api']);
+
+    server.close();
+  });
+});
+
+describe('GET /api/projects/:slug/journal', () => {
+  let server, port;
+
+  before(async () => {
+    const result = createTestServer({
+      sidebar: { type: 'projects', projectsDir: 'projects' },
+    });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => server.close());
+
+  it('returns per-project journal entries', async () => {
+    const { status, data } = await fetchJSON(port, '/api/projects/alpha-feature/journal');
+    assert.equal(status, 200);
+    assert.equal(data.slug, 'alpha-feature');
+    assert.ok(Array.isArray(data.entries));
+    assert.equal(data.entries.length, 3);
+    assert.equal(data.entries[0].author, 'bobbo');
+    assert.equal(data.entries[0].tag, 'output');
+  });
+
+  it('returns empty entries for project with no journal', async () => {
+    const { status, data } = await fetchJSON(port, '/api/projects/gamma-docs/journal');
+    assert.equal(status, 200);
+    assert.equal(data.slug, 'gamma-docs');
+    assert.deepEqual(data.entries, []);
+  });
+});
+
+describe('POST /api/projects/:slug/journal', () => {
+  let server, port, tmpDir;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-proj-journal-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+    fs.mkdirSync(path.join(tmpDir, 'projects'));
+    fs.writeFileSync(path.join(tmpDir, 'projects', 'test-proj.md'), '---\nstatus: active\npriority: high\n---\n\n# Test Proj\n');
+
+    const result = createTestServer({
+      agentDir: tmpDir,
+      sidebar: { type: 'projects', projectsDir: 'projects' },
+    });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('creates per-project journal entry', async () => {
+    const { status, data } = await fetchJSON(port, '/api/projects/test-proj/journal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Project journal test', tag: 'note' }),
+    });
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
+    assert.equal(data.tag, 'note');
+
+    const content = fs.readFileSync(path.join(tmpDir, 'journals', 'test-proj.md'), 'utf-8');
+    assert.ok(content.includes('Test Proj — Journal'));
+    assert.ok(content.includes('rob | note'));
+    assert.ok(content.includes('Project journal test'));
+  });
+
+  it('rejects invalid tag', async () => {
+    const { status, data } = await fetchJSON(port, '/api/projects/test-proj/journal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Something', tag: 'bad' }),
+    });
+    assert.equal(status, 400);
+    assert.ok(data.error.includes('Invalid tag'));
+  });
+});
+
+describe('GET /api/projects/:slug/file', () => {
+  let server, port;
+
+  before(async () => {
+    const result = createTestServer({
+      sidebar: { type: 'projects', projectsDir: 'projects' },
+    });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => server.close());
+
+  it('returns raw project file content', async () => {
+    const { status, data } = await fetchJSON(port, '/api/projects/alpha-feature/file');
+    assert.equal(status, 200);
+    assert.equal(data.slug, 'alpha-feature');
+    assert.ok(data.content.includes('# Alpha Feature'));
+    assert.ok(data.content.includes('priority: high'));
+  });
+
+  it('returns 404 for nonexistent project', async () => {
+    const { status, data } = await fetchJSON(port, '/api/projects/nonexistent/file');
     assert.equal(status, 404);
     assert.ok(data.error.includes('not found'));
   });

@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const http = require('http');
-const { sendJSON, readBody, readLastLines, parseJournal, getAllJournalEntries } = require('../lib/helpers');
+const { sendJSON, readBody, readLastLines, parseJournal, getAllJournalEntries, parseFrontmatter } = require('../lib/helpers');
 
 // --- parseJournal ---
 
@@ -123,6 +123,40 @@ describe('getAllJournalEntries', () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
+  });
+});
+
+// --- parseFrontmatter ---
+
+describe('parseFrontmatter', () => {
+  it('parses valid YAML frontmatter', () => {
+    const content = '---\nstatus: active\npriority: high\n---\n\n# Title\n';
+    const fm = parseFrontmatter(content);
+    assert.equal(fm.status, 'active');
+    assert.equal(fm.priority, 'high');
+  });
+
+  it('returns empty object for missing frontmatter', () => {
+    const fm = parseFrontmatter('# Just a title\n\nSome content.\n');
+    assert.deepEqual(fm, {});
+  });
+
+  it('returns empty object for empty content', () => {
+    const fm = parseFrontmatter('');
+    assert.deepEqual(fm, {});
+  });
+
+  it('parses bracket-delimited values as arrays', () => {
+    const content = '---\ntags: [backend, api, testing]\n---\n';
+    const fm = parseFrontmatter(content);
+    assert.ok(Array.isArray(fm.tags));
+    assert.deepEqual(fm.tags, ['backend', 'api', 'testing']);
+  });
+
+  it('handles keys with hyphens', () => {
+    const content = '---\ndue-date: 2026-03-01\n---\n';
+    const fm = parseFrontmatter(content);
+    assert.equal(fm['due-date'], '2026-03-01');
   });
 });
 

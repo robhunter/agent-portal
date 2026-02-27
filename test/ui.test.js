@@ -182,4 +182,41 @@ describe('buildHTML', () => {
     const html = buildHTML(baseConfig);
     assert.ok(!html.includes('function loadRequests'));
   });
+
+  it('renders project sidebar when sidebar.type is projects', () => {
+    const config = {
+      ...baseConfig,
+      sidebar: { type: 'projects', runningLog: true },
+      features: { tabs: ['journal', 'project', 'status'] },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('id="project-list"'));
+    assert.ok(html.includes('id="bobbo-log-item"'));
+    assert.ok(html.includes('function loadProjects'));
+    assert.ok(html.includes('function selectProject'));
+    assert.ok(html.includes('function selectBobboLog'));
+    assert.ok(html.includes('function renderSidebar'));
+    assert.ok(html.includes('function loadProjectFile'));
+    assert.ok(html.includes('"sidebarType":"projects"'));
+  });
+
+  it('renders simple sidebar by default (no project sidebar)', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(html.includes('id="sidebar-header"'));
+    assert.ok(html.includes('id="status-dot"'));
+    assert.ok(!html.includes('id="project-list"'));
+    assert.ok(!html.includes('function loadProjects'));
+    assert.ok(html.includes('"sidebarType":"simple"'));
+  });
+
+  it('includes project tab in TAB_LOADERS when configured', () => {
+    const config = {
+      ...baseConfig,
+      sidebar: { type: 'projects' },
+      features: { tabs: ['journal', 'project', 'status'] },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('project: loadProjectFile'));
+    assert.ok(html.includes('data-tab="project"'));
+  });
 });
