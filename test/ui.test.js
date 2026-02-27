@@ -76,12 +76,22 @@ describe('buildHTML', () => {
     assert.ok(html.includes('function formatTimestamp'));
     assert.ok(html.includes('function switchTab'));
     assert.ok(html.includes('function loadJournal'));
-    assert.ok(html.includes('function loadGitHub'));
     assert.ok(html.includes('function loadStatus'));
     assert.ok(html.includes('function submitNote'));
     assert.ok(html.includes('function updateStatusDot'));
     assert.ok(html.includes('function loadNextRun'));
     assert.ok(html.includes('function init'));
+    // loadGitHub is only included when GitHub feature is enabled
+    assert.ok(!html.includes('function loadGitHub'));
+  });
+
+  it('includes loadGitHub when GitHub is configured', () => {
+    const config = {
+      ...baseConfig,
+      features: { github: { repos: ['robhunter/agentdeals'] } },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('function loadGitHub'));
   });
 
   it('embeds PORTAL_CONFIG with correct name', () => {
