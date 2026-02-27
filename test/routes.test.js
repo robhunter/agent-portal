@@ -25,6 +25,7 @@ function createTestServer(configOverrides = {}) {
   require('../lib/routes/status').register(routes, config);
   require('../lib/routes/journal').register(routes, config);
   require('../lib/routes/events').register(routes, config);
+  require('../lib/routes/github').register(routes, config);
 
   return { server: createServer(config, { routes, getHTML: () => '<html>test</html>' }), config };
 }
@@ -236,5 +237,32 @@ describe('GET /api/wins', () => {
     assert.ok(Array.isArray(data));
     // Fixture win is from 2026-02-01 which may or may not be within 30 days
     // depending on when tests run — just verify it's an array
+  });
+});
+
+describe('GET /api/github/* (no repos configured)', () => {
+  let server, port;
+
+  before(async () => {
+    const result = createTestServer(); // features: {} means no github
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => server.close());
+
+  it('returns empty items for /api/github/issues', async () => {
+    const { status, data } = await fetchJSON(port, '/api/github/issues');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(data.items));
+    assert.equal(data.items.length, 0);
+  });
+
+  it('returns empty items for /api/github/prs', async () => {
+    const { status, data } = await fetchJSON(port, '/api/github/prs');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(data.items));
+    assert.equal(data.items.length, 0);
   });
 });
