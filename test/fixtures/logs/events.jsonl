@@ -1,0 +1,3 @@
+{"ts":"2026-02-01T08:00:00+00:00","type":"cycle_start","summary":"Scheduled wake"}
+{"ts":"2026-02-01T08:15:00+00:00","type":"work","summary":"Shipped PR #5","project":"agentdeals"}
+{"ts":"2026-02-01T08:15:30+00:00","type":"cycle_end","summary":"Cycle complete"}

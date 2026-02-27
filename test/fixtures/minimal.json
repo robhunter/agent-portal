@@ -1,0 +1,18 @@
+{
+  "name": "Test",
+  "port": 9090,
+  "agentDir": "./",
+  "pidFile": "/tmp/test-agent-portal.pid",
+  "authors": {
+    "rob":   { "color": "#1565c0", "bg": "#e3f2fd" },
+    "coder": { "color": "#4527a0", "bg": "#ede7f6" }
+  },
+  "sidebar": {
+    "type": "simple"
+  },
+  "tabs": [
+    { "id": "journal", "label": "Journal" },
+    { "id": "status",  "label": "Status" }
+  ],
+  "features": {}
+}
