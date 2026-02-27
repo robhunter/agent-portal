@@ -308,6 +308,165 @@ describe('PM portal integration', () => {
   });
 });
 
+// --- Bobbo-specific integration tests ---
+
+describe('Bobbo portal integration', () => {
+  let server, port, tmpDir;
+
+  before(async () => {
+    // Use a temp dir for deploy signal file tests
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-bobbo-int-'));
+    const result = bootPortal({
+      name: 'Bobbo',
+      authors: {
+        rob: { color: '#1565c0', bg: '#e3f2fd' },
+        bobbo: { color: '#4527a0', bg: '#ede7f6' },
+      },
+      sidebar: {
+        type: 'projects',
+        projectsDir: 'projects',
+        runningLog: true,
+      },
+      features: {
+        tabs: ['journal', 'outputs', 'project'],
+        outputs: true,
+        feedback: true,
+        deploy: true,
+        deploySignalFile: path.join(tmpDir, 'deploy-signal'),
+        serviceRestart: ['review-server', 'telegram-poller'],
+      },
+    });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('HTML includes project sidebar with Running Log', async () => {
+    const { text } = await fetchHTML(port, '/');
+    assert.ok(text.includes('id="project-list"'));
+    assert.ok(text.includes('id="bobbo-log-item"'));
+    assert.ok(text.includes('Running Log'));
+    // No simple sidebar elements
+    assert.ok(!text.includes('id="sidebar-header"'));
+    assert.ok(!text.includes('id="status-dot"'));
+  });
+
+  it('HTML includes 3 Bobbo tabs', async () => {
+    const { text } = await fetchHTML(port, '/');
+    assert.ok(text.includes('data-tab="journal"'));
+    assert.ok(text.includes('data-tab="outputs"'));
+    assert.ok(text.includes('data-tab="project"'));
+    // Should NOT have PM tabs
+    assert.ok(!text.includes('data-tab="roadmap"'));
+    assert.ok(!text.includes('data-tab="health"'));
+    assert.ok(!text.includes('data-tab="requests"'));
+  });
+
+  it('HTML includes Bobbo author badge CSS', async () => {
+    const { text } = await fetchHTML(port, '/');
+    assert.ok(text.includes('.author-badge.bobbo'));
+    assert.ok(text.includes('#4527a0'));
+  });
+
+  it('HTML includes project sidebar JS functions', async () => {
+    const { text } = await fetchHTML(port, '/');
+    assert.ok(text.includes('function loadProjects'));
+    assert.ok(text.includes('function selectProject'));
+    assert.ok(text.includes('function selectBobboLog'));
+    assert.ok(text.includes('function renderSidebar'));
+    assert.ok(text.includes('function loadProjectFile'));
+  });
+
+  it('HTML includes outputs tab JS', async () => {
+    const { text } = await fetchHTML(port, '/');
+    assert.ok(text.includes('function loadOutputs'));
+    assert.ok(text.includes('function viewOutput'));
+    assert.ok(text.includes('function submitFeedback'));
+  });
+
+  it('HTML includes URL state management', async () => {
+    const { text } = await fetchHTML(port, '/');
+    assert.ok(text.includes('function pushURLState'));
+    assert.ok(text.includes('function initFromURL'));
+    assert.ok(text.includes('popstate'));
+  });
+
+  it('GET /api/projects returns project list', async () => {
+    const { status, data } = await fetchJSON(port, '/api/projects');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(data));
+    assert.ok(data.length >= 3);
+    assert.equal(data[0].priority, 'high');
+  });
+
+  it('GET /api/projects/:slug/journal returns entries', async () => {
+    const { status, data } = await fetchJSON(port, '/api/projects/alpha-feature/journal');
+    assert.equal(status, 200);
+    assert.equal(data.slug, 'alpha-feature');
+    assert.ok(data.entries.length >= 3);
+  });
+
+  it('GET /api/projects/:slug/file returns project markdown', async () => {
+    const { status, data } = await fetchJSON(port, '/api/projects/alpha-feature/file');
+    assert.equal(status, 200);
+    assert.ok(data.content.includes('# Alpha Feature'));
+  });
+
+  it('GET /api/outputs returns output files', async () => {
+    const { status, data } = await fetchJSON(port, '/api/outputs');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(data));
+    assert.ok(data.length >= 3);
+  });
+
+  it('GET /api/feedback returns existing feedback', async () => {
+    const { status, data } = await fetchJSON(port, '/api/feedback/alpha-feature-api-endpoints.md');
+    assert.equal(status, 200);
+    assert.ok(data.content.includes('rating: up'));
+  });
+
+  it('POST /api/deploy writes signal file', async () => {
+    const { status, data } = await fetchJSON(port, '/api/deploy', { method: 'POST' });
+    assert.equal(status, 202);
+    assert.equal(data.ok, true);
+    const content = fs.readFileSync(path.join(tmpDir, 'deploy-signal'), 'utf-8');
+    assert.ok(content.match(/^\d{4}-/));
+  });
+
+  it('POST /api/services/:name/restart validates allowlist', async () => {
+    const validRes = await fetchJSON(port, '/api/services/telegram-poller/restart', { method: 'POST' });
+    assert.equal(validRes.status, 200);
+    assert.equal(validRes.data.ok, true);
+
+    const invalidRes = await fetchJSON(port, '/api/services/unknown/restart', { method: 'POST' });
+    assert.equal(invalidRes.status, 400);
+    assert.ok(invalidRes.data.error.includes('Unknown service'));
+  });
+
+  it('all core routes still work', async () => {
+    const statusRes = await fetchJSON(port, '/api/status');
+    assert.equal(statusRes.status, 200);
+    const journalRes = await fetchJSON(port, '/api/journal');
+    assert.equal(journalRes.status, 200);
+    const eventsRes = await fetchJSON(port, '/api/events');
+    assert.equal(eventsRes.status, 200);
+  });
+
+  it('PM routes return 404 (not configured)', async () => {
+    const roadmapRes = await fetchJSON(port, '/api/roadmap');
+    assert.equal(roadmapRes.status, 404);
+    const healthRes = await fetchJSON(port, '/api/health');
+    assert.equal(healthRes.status, 404);
+    const requestsRes = await fetchJSON(port, '/api/requests');
+    assert.equal(requestsRes.status, 404);
+  });
+});
+
 describe('Coder config regression check', () => {
   let server, port;
 
@@ -344,6 +503,22 @@ describe('Coder config regression check', () => {
     assert.equal(healthRes.status, 404);
     const requestsRes = await fetchJSON(port, '/api/requests');
     assert.equal(requestsRes.status, 404);
+  });
+
+  it('Bobbo routes return 404', async () => {
+    const projectsRes = await fetchJSON(port, '/api/projects');
+    assert.equal(projectsRes.status, 404);
+    const outputsRes = await fetchJSON(port, '/api/outputs');
+    assert.equal(outputsRes.status, 404);
+    const deployRes = await fetchJSON(port, '/api/deploy', { method: 'POST' });
+    assert.equal(deployRes.status, 404);
+  });
+
+  it('HTML uses simple sidebar (no project list)', async () => {
+    const { text } = await fetchHTML(port, '/');
+    assert.ok(text.includes('id="sidebar-header"'));
+    assert.ok(!text.includes('id="project-list"'));
+    assert.ok(!text.includes('function loadProjects'));
   });
 
   it('core routes still work', async () => {

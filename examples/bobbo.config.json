@@ -1,13 +1,24 @@
 {
   "name": "Bobbo",
   "port": 8080,
-  "agentDir": "/root/code/bobbo-agent/agent",
+  "agentDir": "/root/bobbo-agent/agent",
   "cronFile": "/etc/cron.d/bobbo",
-  "lockFile": "/tmp/bobbo-agent.lock",
-  "pidFile": "/tmp/bobbo-portal-server.pid",
+  "lockFile": "/tmp/bobbo.lock",
+  "pidFile": "/tmp/bobbo-review-server.pid",
   "authors": {
     "rob":   { "color": "#1565c0", "bg": "#e3f2fd" },
-    "bobbo": { "color": "#c62828", "bg": "#fce4ec" }
+    "bobbo": { "color": "#4527a0", "bg": "#ede7f6" }
   },
-  "features": {}
+  "sidebar": {
+    "type": "projects",
+    "projectsDir": "projects",
+    "runningLog": true
+  },
+  "features": {
+    "tabs": ["journal", "outputs", "project"],
+    "outputs": true,
+    "feedback": true,
+    "deploy": true,
+    "serviceRestart": ["review-server", "telegram-poller"]
+  }
 }
