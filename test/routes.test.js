@@ -29,6 +29,7 @@ function createTestServer(configOverrides = {}) {
   require('../lib/routes/cycle').register(routes, config);
   require('../lib/routes/roadmap').register(routes, config);
   require('../lib/routes/health').register(routes, config);
+  require('../lib/routes/requests').register(routes, config);
 
   return { server: createServer(config, { routes, getHTML: () => '<html>test</html>' }), config };
 }
@@ -448,5 +449,137 @@ describe('GET /api/health', () => {
 
     server.close();
     fs.rmSync(tmpDir, { recursive: true });
+  });
+});
+
+describe('GET /api/requests', () => {
+  it('returns request files with metadata when feature enabled', async () => {
+    const result = createTestServer({ features: { requests: true } });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/requests');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(data.items));
+    assert.equal(data.items.length, 3);
+    // Sorted alphabetically by filename
+    assert.equal(data.items[0].file, 'add-logging.md');
+    assert.equal(data.items[0].status, 'pending');
+    assert.ok(data.items[0].title.includes('Add structured logging'));
+    assert.equal(data.items[1].file, 'deploy-automation.md');
+    assert.equal(data.items[1].status, 'completed');
+    assert.equal(data.items[2].file, 'improve-tests.md');
+    assert.equal(data.items[2].status, 'approved');
+
+    server.close();
+  });
+
+  it('returns 404 when feature disabled', async () => {
+    const result = createTestServer({ features: {} });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status } = await fetchJSON(port, '/api/requests');
+    assert.equal(status, 404);
+
+    server.close();
+  });
+
+  it('returns empty items when requests dir missing', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-requests-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+
+    const result = createTestServer({ agentDir: tmpDir, features: { requests: true } });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/requests');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(data.items));
+    assert.equal(data.items.length, 0);
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+});
+
+describe('POST /api/requests/reply', () => {
+  let server, port, tmpDir;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-reply-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+    fs.mkdirSync(path.join(tmpDir, 'requests'));
+    fs.writeFileSync(path.join(tmpDir, 'requests', 'test-request.md'),
+      '# Request: Test feature\n\n**Status:** pending\n**Filed:** 2026-02-20\n\nPlease add test feature.\n');
+
+    const result = createTestServer({ agentDir: tmpDir, features: { requests: true } });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('appends reply to request file and cross-posts to journal', async () => {
+    const { status, data } = await fetchJSON(port, '/api/requests/reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file: 'test-request.md', comment: 'Approved, proceed.' }),
+    });
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
+    assert.ok(data.ts);
+
+    // Verify reply appended to request file
+    const reqContent = fs.readFileSync(path.join(tmpDir, 'requests', 'test-request.md'), 'utf-8');
+    assert.ok(reqContent.includes('## Response'));
+    assert.ok(reqContent.includes('Approved, proceed.'));
+
+    // Verify cross-post to journal
+    const now = new Date();
+    const journalFile = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}.md`;
+    const journalContent = fs.readFileSync(path.join(tmpDir, 'journals', journalFile), 'utf-8');
+    assert.ok(journalContent.includes('rob | direction'));
+    assert.ok(journalContent.includes('Re: Test feature'));
+    assert.ok(journalContent.includes('Approved, proceed.'));
+  });
+
+  it('rejects missing file field', async () => {
+    const { status, data } = await fetchJSON(port, '/api/requests/reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment: 'Hello' }),
+    });
+    assert.equal(status, 400);
+    assert.ok(data.error.includes('required'));
+  });
+
+  it('rejects path traversal', async () => {
+    const { status, data } = await fetchJSON(port, '/api/requests/reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file: '../../../etc/passwd', comment: 'attack' }),
+    });
+    assert.equal(status, 400);
+    assert.ok(data.error.includes('Invalid filename'));
+  });
+
+  it('returns 404 for nonexistent request file', async () => {
+    const { status, data } = await fetchJSON(port, '/api/requests/reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file: 'nonexistent.md', comment: 'Hello' }),
+    });
+    assert.equal(status, 404);
+    assert.ok(data.error.includes('not found'));
   });
 });

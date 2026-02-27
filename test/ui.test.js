@@ -165,4 +165,21 @@ describe('buildHTML', () => {
     const html = buildHTML(baseConfig);
     assert.ok(!html.includes('function loadHealth'));
   });
+
+  it('includes requests tab JS when configured', () => {
+    const config = {
+      ...baseConfig,
+      features: { tabs: ['journal', 'requests', 'status'], requests: true },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('data-tab="requests"'));
+    assert.ok(html.includes('function loadRequests'));
+    assert.ok(html.includes('function replyToRequest'));
+    assert.ok(html.includes('requests: loadRequests'));
+  });
+
+  it('excludes requests tab JS when not configured', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(!html.includes('function loadRequests'));
+  });
 });
