@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createServer, startServer } = require('./lib/server');
+const { buildHTML } = require('./lib/ui');
 
 // Load config from CLI argument
 const configPath = process.argv[2];
@@ -50,26 +51,11 @@ require('./lib/routes/status').register(routes, config);
 require('./lib/routes/journal').register(routes, config);
 require('./lib/routes/events').register(routes, config);
 
-// Build HTML page
+// Build HTML page (cached — config doesn't change at runtime)
+let cachedHTML;
 function getHTML() {
-  // Minimal placeholder HTML until UI modules are added in PR 3
-  const name = config.name || 'Agent';
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${name} Portal</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; color: #333; }
-    h1 { color: #1a73e8; }
-  </style>
-</head>
-<body>
-  <h1>${name} Portal</h1>
-  <p>Portal is running. UI modules will be added in subsequent PRs.</p>
-</body>
-</html>`;
+  if (!cachedHTML) cachedHTML = buildHTML(config);
+  return cachedHTML;
 }
 
 // Create and start server
