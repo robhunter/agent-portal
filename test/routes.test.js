@@ -27,6 +27,8 @@ function createTestServer(configOverrides = {}) {
   require('../lib/routes/events').register(routes, config);
   require('../lib/routes/github').register(routes, config);
   require('../lib/routes/cycle').register(routes, config);
+  require('../lib/routes/roadmap').register(routes, config);
+  require('../lib/routes/health').register(routes, config);
 
   return { server: createServer(config, { routes, getHTML: () => '<html>test</html>' }), config };
 }
@@ -349,5 +351,102 @@ describe('POST /api/cycle/respond', () => {
     });
     assert.equal(status, 404);
     assert.ok(data.error.includes('respond.sh not found'));
+  });
+});
+
+describe('GET /api/roadmap', () => {
+  it('returns roadmap.md content when feature enabled', async () => {
+    const result = createTestServer({ features: { roadmap: true } });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/roadmap');
+    assert.equal(status, 200);
+    assert.ok(data.content.includes('Product Roadmap'));
+    assert.ok(data.content.includes('Launch agent portal'));
+
+    server.close();
+  });
+
+  it('returns 404 when feature disabled', async () => {
+    const result = createTestServer({ features: {} });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status } = await fetchJSON(port, '/api/roadmap');
+    assert.equal(status, 404);
+
+    server.close();
+  });
+
+  it('returns fallback content when roadmap.md missing', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-roadmap-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+
+    const result = createTestServer({ agentDir: tmpDir, features: { roadmap: true } });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/roadmap');
+    assert.equal(status, 200);
+    assert.ok(data.content.includes('No roadmap.md found'));
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+});
+
+describe('GET /api/health', () => {
+  it('returns health entries when feature enabled', async () => {
+    const result = createTestServer({ features: { health: true } });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/health');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(data));
+    assert.equal(data.length, 3);
+    assert.equal(data[0].project, 'agentdeals');
+    assert.equal(data[0].ok, true);
+    assert.equal(data[2].ok, false);
+    assert.equal(data[2].status, 500);
+
+    server.close();
+  });
+
+  it('returns 404 when feature disabled', async () => {
+    const result = createTestServer({ features: {} });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status } = await fetchJSON(port, '/api/health');
+    assert.equal(status, 404);
+
+    server.close();
+  });
+
+  it('returns empty array when health.jsonl missing', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-health-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+
+    const result = createTestServer({ agentDir: tmpDir, features: { health: true } });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/health');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(data));
+    assert.equal(data.length, 0);
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
   });
 });

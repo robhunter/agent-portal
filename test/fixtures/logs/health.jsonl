@@ -1,0 +1,3 @@
+{"ts":"2026-02-25T10:00:00Z","project":"agentdeals","endpoint":"https://example.com/api/health","status":200,"latency_ms":142,"ok":true}
+{"ts":"2026-02-25T12:00:00Z","project":"agentdeals","endpoint":"https://example.com/api/health","status":200,"latency_ms":98,"ok":true}
+{"ts":"2026-02-26T10:00:00Z","project":"agent-portal","endpoint":"https://example.com/api/status","status":500,"latency_ms":2100,"ok":false}
