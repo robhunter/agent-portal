@@ -107,4 +107,20 @@ describe('buildHTML', () => {
     assert.ok(html.includes('<title>Agent — Agent Portal</title>'));
     assert.ok(html.includes('<h1>Agent</h1>'));
   });
+
+  it('includes cron toggle and cycle control buttons', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(html.includes('id="cron-toggle-btn"'));
+    assert.ok(html.includes('id="run-cycle-btn"'));
+    assert.ok(html.includes('id="run-respond-btn"'));
+    assert.ok(html.includes('function toggleCron'));
+    assert.ok(html.includes('function runCycle'));
+    assert.ok(html.includes('function runRespond'));
+  });
+
+  it('includes cycle-running status indicator', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(html.includes('id="cycle-status"'));
+    assert.ok(html.includes('data.cycleRunning'));
+  });
 });
