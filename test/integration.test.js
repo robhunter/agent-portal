@@ -221,3 +221,132 @@ describe('Config variations', () => {
     server.close();
   });
 });
+
+// --- PM-specific integration tests ---
+
+describe('PM portal integration', () => {
+  let server, port;
+
+  before(async () => {
+    const result = bootPortal({
+      name: 'PM',
+      authors: {
+        rob: { color: '#1565c0', bg: '#e3f2fd' },
+        pm: { color: '#00695c', bg: '#e0f2f1' },
+      },
+      features: {
+        github: { repos: ['robhunter/agentdeals'] },
+        tabs: ['journal', 'github', 'roadmap', 'health', 'requests', 'status'],
+        cronToggle: true,
+        cycleButtons: true,
+        statusDot: true,
+        roadmap: true,
+        health: true,
+        requests: true,
+      },
+    });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => server.close());
+
+  it('HTML includes all 6 PM tabs', async () => {
+    const { text } = await fetchHTML(port, '/');
+    assert.ok(text.includes('data-tab="journal"'));
+    assert.ok(text.includes('data-tab="github"'));
+    assert.ok(text.includes('data-tab="roadmap"'));
+    assert.ok(text.includes('data-tab="health"'));
+    assert.ok(text.includes('data-tab="requests"'));
+    assert.ok(text.includes('data-tab="status"'));
+  });
+
+  it('HTML includes PM author badge CSS', async () => {
+    const { text } = await fetchHTML(port, '/');
+    assert.ok(text.includes('.author-badge.pm'));
+    assert.ok(text.includes('#00695c'));
+  });
+
+  it('HTML includes all tab loader functions', async () => {
+    const { text } = await fetchHTML(port, '/');
+    assert.ok(text.includes('function loadRoadmap'));
+    assert.ok(text.includes('function loadHealth'));
+    assert.ok(text.includes('function loadRequests'));
+    assert.ok(text.includes('function loadGitHub'));
+  });
+
+  it('GET /api/roadmap returns content', async () => {
+    const { status, data } = await fetchJSON(port, '/api/roadmap');
+    assert.equal(status, 200);
+    assert.ok(data.content);
+  });
+
+  it('GET /api/health returns entries', async () => {
+    const { status, data } = await fetchJSON(port, '/api/health');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(data));
+  });
+
+  it('GET /api/requests returns items', async () => {
+    const { status, data } = await fetchJSON(port, '/api/requests');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(data.items));
+    assert.ok(data.items.length > 0);
+  });
+
+  it('all core routes still work', async () => {
+    const statusRes = await fetchJSON(port, '/api/status');
+    assert.equal(statusRes.status, 200);
+    const journalRes = await fetchJSON(port, '/api/journal');
+    assert.equal(journalRes.status, 200);
+    const eventsRes = await fetchJSON(port, '/api/events');
+    assert.equal(eventsRes.status, 200);
+  });
+});
+
+describe('Coder config regression check', () => {
+  let server, port;
+
+  before(async () => {
+    // Boot with Coder-like config — no PM features
+    const result = bootPortal({
+      name: 'Coder',
+      features: {
+        github: { repos: ['robhunter/agentdeals'] },
+        tabs: ['journal', 'github', 'status'],
+      },
+    });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => server.close());
+
+  it('HTML has only 3 tabs (no PM tabs)', async () => {
+    const { text } = await fetchHTML(port, '/');
+    assert.ok(text.includes('data-tab="journal"'));
+    assert.ok(text.includes('data-tab="github"'));
+    assert.ok(text.includes('data-tab="status"'));
+    assert.ok(!text.includes('data-tab="roadmap"'));
+    assert.ok(!text.includes('data-tab="health"'));
+    assert.ok(!text.includes('data-tab="requests"'));
+  });
+
+  it('PM routes return 404', async () => {
+    const roadmapRes = await fetchJSON(port, '/api/roadmap');
+    assert.equal(roadmapRes.status, 404);
+    const healthRes = await fetchJSON(port, '/api/health');
+    assert.equal(healthRes.status, 404);
+    const requestsRes = await fetchJSON(port, '/api/requests');
+    assert.equal(requestsRes.status, 404);
+  });
+
+  it('core routes still work', async () => {
+    const statusRes = await fetchJSON(port, '/api/status');
+    assert.equal(statusRes.status, 200);
+    const journalRes = await fetchJSON(port, '/api/journal');
+    assert.equal(journalRes.status, 200);
+  });
+});
