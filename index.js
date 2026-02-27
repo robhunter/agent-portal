@@ -45,8 +45,10 @@ config._serverStartTime = Date.now();
 // Collect routes from route modules
 const routes = {};
 
-// TODO: Route modules will be registered here in subsequent PRs
-// Each route module exports: register(routes, config)
+// Register core route modules
+require('./lib/routes/status').register(routes, config);
+require('./lib/routes/journal').register(routes, config);
+require('./lib/routes/events').register(routes, config);
 
 // Build HTML page
 function getHTML() {
