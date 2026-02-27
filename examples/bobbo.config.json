@@ -1,0 +1,13 @@
+{
+  "name": "Bobbo",
+  "port": 8080,
+  "agentDir": "/root/code/bobbo-agent/agent",
+  "cronFile": "/etc/cron.d/bobbo",
+  "lockFile": "/tmp/bobbo-agent.lock",
+  "pidFile": "/tmp/bobbo-portal-server.pid",
+  "authors": {
+    "rob":   { "color": "#1565c0", "bg": "#e3f2fd" },
+    "bobbo": { "color": "#c62828", "bg": "#fce4ec" }
+  },
+  "features": {}
+}

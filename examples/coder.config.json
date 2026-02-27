@@ -1,0 +1,17 @@
+{
+  "name": "Coder",
+  "port": 8082,
+  "agentDir": "/root/agent-coder",
+  "cronFile": "/etc/cron.d/agent-coder",
+  "lockFile": "/tmp/agent-coder.lock",
+  "pidFile": "/tmp/agent-coder-portal-server.pid",
+  "authors": {
+    "rob":   { "color": "#1565c0", "bg": "#e3f2fd" },
+    "coder": { "color": "#4527a0", "bg": "#ede7f6" }
+  },
+  "features": {
+    "github": {
+      "repos": ["robhunter/agentdeals"]
+    }
+  }
+}

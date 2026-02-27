@@ -1,0 +1,17 @@
+{
+  "name": "PM",
+  "port": 8081,
+  "agentDir": "/root/agent-pm",
+  "cronFile": "/etc/cron.d/agent-pm",
+  "lockFile": "/tmp/agent-pm.lock",
+  "pidFile": "/tmp/agent-pm-portal-server.pid",
+  "authors": {
+    "rob": { "color": "#1565c0", "bg": "#e3f2fd" },
+    "pm":  { "color": "#2e7d32", "bg": "#e8f5e9" }
+  },
+  "features": {
+    "github": {
+      "repos": ["robhunter/agentdeals", "robhunter/agent-pm"]
+    }
+  }
+}
