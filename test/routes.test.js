@@ -31,6 +31,7 @@ function createTestServer(configOverrides = {}) {
   require('../lib/routes/health').register(routes, config);
   require('../lib/routes/requests').register(routes, config);
   require('../lib/routes/projects').register(routes, config);
+  require('../lib/routes/outputs').register(routes, config);
 
   return { server: createServer(config, { routes, getHTML: () => '<html>test</html>' }), config };
 }
@@ -752,5 +753,207 @@ describe('GET /api/projects/:slug/file', () => {
     const { status, data } = await fetchJSON(port, '/api/projects/nonexistent/file');
     assert.equal(status, 404);
     assert.ok(data.error.includes('not found'));
+  });
+});
+
+// --- Output routes ---
+
+describe('GET /api/outputs', () => {
+  it('returns output files with review status when feature enabled', async () => {
+    const result = createTestServer({ features: { outputs: true, feedback: true } });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/outputs');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(data));
+    assert.equal(data.length, 3);
+    // Should be sorted by modification date (newest first)
+    assert.ok(data.every(o => o.filename.endsWith('.md')));
+    // alpha-feature-api-endpoints has feedback
+    const reviewed = data.find(o => o.filename === 'alpha-feature-api-endpoints.md');
+    assert.ok(reviewed);
+    assert.equal(reviewed.reviewed, true);
+    assert.equal(reviewed.rating, 'up');
+    // beta-cleanup has no feedback
+    const unreviewed = data.find(o => o.filename === 'beta-cleanup-deprecated.md');
+    assert.ok(unreviewed);
+    assert.equal(unreviewed.reviewed, false);
+
+    server.close();
+  });
+
+  it('returns 404 when feature disabled', async () => {
+    const result = createTestServer({ features: {} });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status } = await fetchJSON(port, '/api/outputs');
+    assert.equal(status, 404);
+
+    server.close();
+  });
+});
+
+describe('GET /api/output/:filename', () => {
+  let server, port;
+
+  before(async () => {
+    const result = createTestServer({ features: { outputs: true } });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => server.close());
+
+  it('returns output file content', async () => {
+    const { status, data } = await fetchJSON(port, '/api/output/alpha-feature-api-endpoints.md');
+    assert.equal(status, 200);
+    assert.equal(data.filename, 'alpha-feature-api-endpoints.md');
+    assert.ok(data.content.includes('API Endpoints'));
+  });
+
+  it('returns 404 for nonexistent output', async () => {
+    const { status } = await fetchJSON(port, '/api/output/nonexistent.md');
+    assert.equal(status, 404);
+  });
+
+  it('rejects path traversal', async () => {
+    const { status, data } = await fetchJSON(port, '/api/output/..%2F..%2Fetc%2Fpasswd');
+    assert.equal(status, 400);
+    assert.ok(data.error.includes('Invalid filename'));
+  });
+});
+
+describe('DELETE /api/output/:filename', () => {
+  let server, port, tmpDir;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-output-del-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+    fs.mkdirSync(path.join(tmpDir, 'output'));
+    fs.mkdirSync(path.join(tmpDir, 'input', 'feedback'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'output', 'delete-me.md'), '# To delete');
+    fs.writeFileSync(path.join(tmpDir, 'input', 'feedback', 'delete-me.feedback.yaml'), 'rating: up\n');
+
+    const result = createTestServer({ agentDir: tmpDir, features: { outputs: true } });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('deletes output and associated feedback', async () => {
+    const { status, data } = await fetchJSON(port, '/api/output/delete-me.md', { method: 'DELETE' });
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
+    assert.equal(data.deleted, 'delete-me.md');
+    // Verify both files removed
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'output', 'delete-me.md')));
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'input', 'feedback', 'delete-me.feedback.yaml')));
+  });
+});
+
+// --- Feedback routes ---
+
+describe('POST /api/feedback/:filename', () => {
+  let server, port, tmpDir;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-feedback-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+    fs.mkdirSync(path.join(tmpDir, 'input', 'feedback'), { recursive: true });
+
+    const result = createTestServer({ agentDir: tmpDir, features: { feedback: true } });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('creates feedback YAML file with thumbs up', async () => {
+    const { status, data } = await fetchJSON(port, '/api/feedback/test-output.md', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating: 2, notes: 'Great work' }),
+    });
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
+    assert.equal(data.file, 'test-output.feedback.yaml');
+
+    const content = fs.readFileSync(path.join(tmpDir, 'input', 'feedback', 'test-output.feedback.yaml'), 'utf-8');
+    assert.ok(content.includes('rating: up'));
+    assert.ok(content.includes('Great work'));
+  });
+
+  it('creates feedback with thumbs down', async () => {
+    const { status, data } = await fetchJSON(port, '/api/feedback/bad-output.md', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating: 1 }),
+    });
+    assert.equal(status, 200);
+    const content = fs.readFileSync(path.join(tmpDir, 'input', 'feedback', 'bad-output.feedback.yaml'), 'utf-8');
+    assert.ok(content.includes('rating: down'));
+  });
+
+  it('rejects invalid rating', async () => {
+    const { status, data } = await fetchJSON(port, '/api/feedback/test.md', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating: 5 }),
+    });
+    assert.equal(status, 400);
+    assert.ok(data.error.includes('Rating must be'));
+  });
+
+  it('rejects empty feedback', async () => {
+    const { status, data } = await fetchJSON(port, '/api/feedback/test.md', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    assert.equal(status, 400);
+    assert.ok(data.error.includes('Provide a rating'));
+  });
+});
+
+describe('GET /api/feedback/:filename', () => {
+  it('returns existing feedback', async () => {
+    const result = createTestServer({ features: { feedback: true } });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/feedback/alpha-feature-api-endpoints.md');
+    assert.equal(status, 200);
+    assert.ok(data.content.includes('rating: up'));
+
+    server.close();
+  });
+
+  it('returns 404 for missing feedback', async () => {
+    const result = createTestServer({ features: { feedback: true } });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status } = await fetchJSON(port, '/api/feedback/no-feedback.md');
+    assert.equal(status, 404);
+
+    server.close();
   });
 });

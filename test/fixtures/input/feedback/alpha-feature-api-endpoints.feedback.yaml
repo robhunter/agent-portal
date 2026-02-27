@@ -1,0 +1,5 @@
+output: alpha-feature-api-endpoints.md
+reviewed_at: 2026-02-21T15:00:00.000Z
+rating: up
+notes: |
+  Clean implementation. Good test coverage.

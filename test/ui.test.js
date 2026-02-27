@@ -219,4 +219,23 @@ describe('buildHTML', () => {
     assert.ok(html.includes('project: loadProjectFile'));
     assert.ok(html.includes('data-tab="project"'));
   });
+
+  it('includes outputs tab JS when configured', () => {
+    const config = {
+      ...baseConfig,
+      features: { tabs: ['journal', 'outputs', 'status'], outputs: true },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('data-tab="outputs"'));
+    assert.ok(html.includes('function loadOutputs'));
+    assert.ok(html.includes('function viewOutput'));
+    assert.ok(html.includes('function submitFeedback'));
+    assert.ok(html.includes('outputs: loadOutputs'));
+  });
+
+  it('excludes outputs tab JS when not configured', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(!html.includes('function loadOutputs'));
+    assert.ok(!html.includes('function viewOutput'));
+  });
 });
