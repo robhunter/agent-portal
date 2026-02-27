@@ -1,0 +1,20 @@
+{
+  "name": "@robhunter/agent-portal",
+  "version": "0.1.0",
+  "description": "Shared web portal for autonomous agents",
+  "main": "index.js",
+  "bin": {
+    "agent-portal": "index.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robhunter/agent-portal.git"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
