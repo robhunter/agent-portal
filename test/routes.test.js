@@ -32,6 +32,7 @@ function createTestServer(configOverrides = {}) {
   require('../lib/routes/requests').register(routes, config);
   require('../lib/routes/projects').register(routes, config);
   require('../lib/routes/outputs').register(routes, config);
+  require('../lib/routes/deploy').register(routes, config);
 
   return { server: createServer(config, { routes, getHTML: () => '<html>test</html>' }), config };
 }
@@ -955,5 +956,94 @@ describe('GET /api/feedback/:filename', () => {
     assert.equal(status, 404);
 
     server.close();
+  });
+});
+
+// --- Deploy routes ---
+
+describe('POST /api/deploy', () => {
+  let server, port, tmpDir;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-deploy-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+
+    const result = createTestServer({
+      agentDir: tmpDir,
+      name: 'TestAgent',
+      features: { deploy: true, deploySignalFile: path.join(tmpDir, 'deploy-signal') },
+    });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('writes deploy signal file', async () => {
+    const { status, data } = await fetchJSON(port, '/api/deploy', { method: 'POST' });
+    assert.equal(status, 202);
+    assert.equal(data.ok, true);
+    assert.ok(data.message.includes('Deploy requested'));
+    // Verify signal file was written
+    const content = fs.readFileSync(path.join(tmpDir, 'deploy-signal'), 'utf-8');
+    assert.ok(content.match(/^\d{4}-/)); // ISO timestamp
+  });
+
+  it('returns 404 when feature disabled', async () => {
+    const result = createTestServer({ features: {} });
+    const server2 = result.server;
+    await new Promise(resolve => server2.listen(0, resolve));
+    const port2 = server2.address().port;
+
+    const { status } = await fetchJSON(port2, '/api/deploy', { method: 'POST' });
+    assert.equal(status, 404);
+
+    server2.close();
+  });
+});
+
+describe('POST /api/services/:name/restart', () => {
+  let server, port;
+
+  before(async () => {
+    const result = createTestServer({
+      features: { serviceRestart: ['review-server', 'telegram-poller'] },
+    });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => server.close());
+
+  it('accepts valid service name', async () => {
+    // telegram-poller won't actually restart (no PID file), but route accepts it
+    const { status, data } = await fetchJSON(port, '/api/services/telegram-poller/restart', { method: 'POST' });
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
+  });
+
+  it('rejects unknown service name', async () => {
+    const { status, data } = await fetchJSON(port, '/api/services/unknown-service/restart', { method: 'POST' });
+    assert.equal(status, 400);
+    assert.ok(data.error.includes('Unknown service'));
+    assert.ok(data.error.includes('review-server'));
+  });
+
+  it('returns 404 when feature disabled', async () => {
+    const result = createTestServer({ features: {} });
+    const server2 = result.server;
+    await new Promise(resolve => server2.listen(0, resolve));
+    const port2 = server2.address().port;
+
+    const { status } = await fetchJSON(port2, '/api/services/anything/restart', { method: 'POST' });
+    assert.equal(status, 404);
+
+    server2.close();
   });
 });

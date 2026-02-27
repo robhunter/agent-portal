@@ -238,4 +238,23 @@ describe('buildHTML', () => {
     assert.ok(!html.includes('function loadOutputs'));
     assert.ok(!html.includes('function viewOutput'));
   });
+
+  it('includes URL state JS for project sidebar', () => {
+    const config = {
+      ...baseConfig,
+      sidebar: { type: 'projects', runningLog: true },
+      features: { tabs: ['journal', 'outputs', 'project', 'status'] },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('function pushURLState'));
+    assert.ok(html.includes('function initFromURL'));
+    assert.ok(html.includes('popstate'));
+    assert.ok(html.includes('initFromURL'));
+  });
+
+  it('excludes URL state JS for simple sidebar', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(!html.includes('function pushURLState'));
+    assert.ok(!html.includes('function initFromURL'));
+  });
 });
