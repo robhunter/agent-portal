@@ -282,4 +282,19 @@ describe('buildHTML', () => {
     assert.ok(html.includes('#menu-btn'));
     assert.ok(html.includes('#sidebar-overlay'));
   });
+
+  it('includes drag-and-drop upload JS', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(html.includes('function handleFileUpload'));
+    assert.ok(html.includes('dragenter'));
+    assert.ok(html.includes('dragover'));
+    assert.ok(html.includes('dragleave'));
+    assert.ok(html.includes('e.dataTransfer.files'));
+  });
+
+  it('includes drag-over CSS class', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(html.includes('textarea.drag-over'));
+    assert.ok(html.includes('dashed'));
+  });
 });
