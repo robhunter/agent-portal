@@ -911,6 +911,19 @@ describe('POST /api/feedback/:filename', () => {
     assert.ok(content.includes('rating: down'));
   });
 
+  it('creates feedback with notes only (no rating)', async () => {
+    const { status, data } = await fetchJSON(port, '/api/feedback/notes-only.md', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: 'Just a comment' }),
+    });
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
+    const content = fs.readFileSync(path.join(tmpDir, 'input', 'feedback', 'notes-only.feedback.yaml'), 'utf-8');
+    assert.ok(!content.includes('rating:'));
+    assert.ok(content.includes('Just a comment'));
+  });
+
   it('rejects invalid rating', async () => {
     const { status, data } = await fetchJSON(port, '/api/feedback/test.md', {
       method: 'POST',
