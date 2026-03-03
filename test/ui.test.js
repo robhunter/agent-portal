@@ -267,4 +267,19 @@ describe('buildHTML', () => {
     assert.ok(!html.includes('function pushURLState'));
     assert.ok(!html.includes('function initFromURL'));
   });
+
+  it('includes mobile menu button and sidebar overlay', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(html.includes('id="menu-btn"'));
+    assert.ok(html.includes('id="sidebar-overlay"'));
+    assert.ok(html.includes('function toggleSidebar'));
+    assert.ok(html.includes('function closeSidebar'));
+  });
+
+  it('includes mobile responsive CSS', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(html.includes('@media (max-width: 768px)'));
+    assert.ok(html.includes('#menu-btn'));
+    assert.ok(html.includes('#sidebar-overlay'));
+  });
 });
