@@ -192,6 +192,112 @@ describe('Journal write + read integration', () => {
   });
 });
 
+describe('Journal edit integration', () => {
+  let server, port, tmpDir;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-int-edit-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+    fs.mkdirSync(path.join(tmpDir, 'projects'));
+
+    // Write a project file for project journal test
+    fs.writeFileSync(path.join(tmpDir, 'projects', 'test-proj.md'), '# Test Project\n');
+
+    const result = bootPortal({
+      agentDir: tmpDir,
+      sidebar: { type: 'projects', projectsDir: 'projects' },
+    });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('edits a main journal entry via PUT /api/journal', async () => {
+    // Create entry
+    const createRes = await fetchJSON(port, '/api/journal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Original text', tag: 'note' }),
+    });
+    assert.equal(createRes.status, 200);
+    const ts = createRes.data.ts;
+
+    // Edit entry
+    const editRes = await fetchJSON(port, '/api/journal', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ts, text: 'Edited text', tag: 'direction' }),
+    });
+    assert.equal(editRes.status, 200);
+    assert.equal(editRes.data.ok, true);
+
+    // Verify edit
+    const readRes = await fetchJSON(port, '/api/journal');
+    const entry = readRes.data.entries.find(e => e.ts === ts);
+    assert.ok(entry);
+    assert.equal(entry.content, 'Edited text');
+    assert.equal(entry.tag, 'direction');
+  });
+
+  it('returns 404 for nonexistent timestamp', async () => {
+    const editRes = await fetchJSON(port, '/api/journal', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ts: '1999-01-01T00:00:00.000Z', text: 'nope', tag: 'note' }),
+    });
+    assert.equal(editRes.status, 404);
+  });
+
+  it('rejects edit with missing fields', async () => {
+    const noTs = await fetchJSON(port, '/api/journal', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'text', tag: 'note' }),
+    });
+    assert.equal(noTs.status, 400);
+
+    const noText = await fetchJSON(port, '/api/journal', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ts: '2026-01-01T00:00:00.000Z', tag: 'note' }),
+    });
+    assert.equal(noText.status, 400);
+  });
+
+  it('edits a project journal entry via PUT /api/projects/:slug/journal', async () => {
+    // Create project journal entry
+    const createRes = await fetchJSON(port, '/api/projects/test-proj/journal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Project original', tag: 'note' }),
+    });
+    assert.equal(createRes.status, 200);
+    const ts = createRes.data.ts;
+
+    // Edit
+    const editRes = await fetchJSON(port, '/api/projects/test-proj/journal', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ts, text: 'Project edited', tag: 'feedback' }),
+    });
+    assert.equal(editRes.status, 200);
+    assert.equal(editRes.data.ok, true);
+
+    // Verify
+    const readRes = await fetchJSON(port, '/api/projects/test-proj/journal');
+    const entry = readRes.data.entries.find(e => e.ts === ts);
+    assert.ok(entry);
+    assert.equal(entry.content, 'Project edited');
+    assert.equal(entry.tag, 'feedback');
+  });
+});
+
 describe('Config variations', () => {
   it('boots with GitHub repos configured', async () => {
     const result = bootPortal({
