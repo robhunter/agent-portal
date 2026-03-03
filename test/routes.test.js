@@ -33,6 +33,7 @@ function createTestServer(configOverrides = {}) {
   require('../lib/routes/projects').register(routes, config);
   require('../lib/routes/outputs').register(routes, config);
   require('../lib/routes/deploy').register(routes, config);
+  require('../lib/routes/claude').register(routes, config);
 
   return { server: createServer(config, { routes, getHTML: () => '<html>test</html>' }), config };
 }
@@ -1058,5 +1059,22 @@ describe('POST /api/services/:name/restart', () => {
     assert.equal(status, 404);
 
     server2.close();
+  });
+});
+
+// --- Claude status route ---
+
+describe('GET /api/claude/status', () => {
+  it('returns a response with loggedIn field', async () => {
+    const result = createTestServer();
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/claude/status');
+    assert.equal(status, 200);
+    assert.equal(typeof data.loggedIn, 'boolean');
+
+    server.close();
   });
 });

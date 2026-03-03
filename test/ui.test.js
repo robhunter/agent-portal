@@ -128,6 +128,13 @@ describe('buildHTML', () => {
     assert.ok(html.includes('function runRespond'));
   });
 
+  it('includes Claude credentials status indicator', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(html.includes('id="claude-status"'));
+    assert.ok(html.includes('function updateClaudeStatus'));
+    assert.ok(html.includes('setInterval(updateClaudeStatus'));
+  });
+
   it('includes cycle-running status indicator', () => {
     const html = buildHTML(baseConfig);
     assert.ok(html.includes('id="cycle-status"'));
