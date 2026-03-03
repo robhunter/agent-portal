@@ -81,6 +81,9 @@ describe('buildHTML', () => {
     assert.ok(html.includes('function updateStatusDot'));
     assert.ok(html.includes('function loadNextRun'));
     assert.ok(html.includes('function init'));
+    assert.ok(html.includes('function startEditEntry'));
+    assert.ok(html.includes('function saveEditEntry'));
+    assert.ok(html.includes('function cancelEditEntry'));
     // loadGitHub is only included when GitHub feature is enabled
     assert.ok(!html.includes('function loadGitHub'));
   });

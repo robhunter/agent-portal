@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const http = require('http');
-const { sendJSON, readBody, readLastLines, parseJournal, getAllJournalEntries, parseFrontmatter } = require('../lib/helpers');
+const { sendJSON, readBody, readLastLines, parseJournal, getAllJournalEntries, parseFrontmatter, editJournalEntry } = require('../lib/helpers');
 
 // --- parseJournal ---
 
@@ -247,5 +247,64 @@ describe('sendJSON', () => {
         });
       });
     });
+  });
+});
+
+// --- editJournalEntry ---
+
+describe('editJournalEntry', () => {
+  let tmpFile;
+
+  before(() => {
+    tmpFile = path.join(os.tmpdir(), 'test-edit-journal-' + Date.now() + '.md');
+    const content = `# Test Journal — 2026-03
+
+---
+
+### 2026-03-01T10:00:00.000Z | rob | note
+
+Original first entry
+
+### 2026-03-01T12:00:00.000Z | coder | output
+
+Agent output here
+
+### 2026-03-01T14:00:00.000Z | rob | question
+
+Should we do X?
+`;
+    fs.writeFileSync(tmpFile, content);
+  });
+
+  after(() => {
+    try { fs.unlinkSync(tmpFile); } catch {}
+  });
+
+  it('edits an existing entry by timestamp', () => {
+    const result = editJournalEntry(tmpFile, '2026-03-01T10:00:00.000Z', 'Updated first entry', 'direction');
+    assert.equal(result, true);
+    const entries = parseJournal(fs.readFileSync(tmpFile, 'utf-8'));
+    const edited = entries.find(e => e.ts === '2026-03-01T10:00:00.000Z');
+    assert.equal(edited.content, 'Updated first entry');
+    assert.equal(edited.tag, 'direction');
+    assert.equal(edited.author, 'rob');
+  });
+
+  it('preserves other entries when editing', () => {
+    const entries = parseJournal(fs.readFileSync(tmpFile, 'utf-8'));
+    assert.equal(entries.length, 3);
+    const agent = entries.find(e => e.ts === '2026-03-01T12:00:00.000Z');
+    assert.equal(agent.content, 'Agent output here');
+    assert.equal(agent.author, 'coder');
+  });
+
+  it('returns false for nonexistent timestamp', () => {
+    const result = editJournalEntry(tmpFile, '1999-01-01T00:00:00.000Z', 'nope', 'note');
+    assert.equal(result, false);
+  });
+
+  it('returns false for nonexistent file', () => {
+    const result = editJournalEntry('/nonexistent/file.md', '2026-03-01T10:00:00.000Z', 'nope', 'note');
+    assert.equal(result, false);
   });
 });
