@@ -59,6 +59,7 @@ require('./lib/routes/projects').register(routes, config);
 require('./lib/routes/outputs').register(routes, config);
 require('./lib/routes/deploy').register(routes, config);
 require('./lib/routes/claude').register(routes, config);
+require('./lib/routes/uploads').register(routes, config);
 
 // Build HTML page (cached — config doesn't change at runtime)
 let cachedHTML;

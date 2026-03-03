@@ -34,6 +34,7 @@ function createTestServer(configOverrides = {}) {
   require('../lib/routes/outputs').register(routes, config);
   require('../lib/routes/deploy').register(routes, config);
   require('../lib/routes/claude').register(routes, config);
+  require('../lib/routes/uploads').register(routes, config);
 
   return { server: createServer(config, { routes, getHTML: () => '<html>test</html>' }), config };
 }
@@ -1076,5 +1077,103 @@ describe('GET /api/claude/status', () => {
     assert.equal(typeof data.loggedIn, 'boolean');
 
     server.close();
+  });
+});
+
+describe('POST /api/upload', () => {
+  let server, port, tmpDir;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-upload-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+    const result = createTestServer({ agentDir: tmpDir });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => { server.close(); fs.rmSync(tmpDir, { recursive: true }); });
+
+  it('uploads a file and returns URL', async () => {
+    const content = Buffer.from('fake PNG data').toString('base64');
+    const { status, data } = await fetchJSON(port, '/api/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: 'test.png', data: content }),
+    });
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
+    assert.ok(data.filename.endsWith('_test.png'));
+    assert.ok(data.url.startsWith('/api/uploads/'));
+
+    // Verify file exists on disk
+    const uploadedPath = path.join(tmpDir, 'uploads', data.filename);
+    assert.ok(fs.existsSync(uploadedPath));
+    assert.equal(fs.readFileSync(uploadedPath, 'utf-8'), 'fake PNG data');
+  });
+
+  it('rejects missing filename', async () => {
+    const { status, data } = await fetchJSON(port, '/api/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: 'abc' }),
+    });
+    assert.equal(status, 400);
+    assert.ok(data.error);
+  });
+
+  it('rejects files over 5MB', async () => {
+    const bigData = Buffer.alloc(6 * 1024 * 1024).toString('base64');
+    const { status, data } = await fetchJSON(port, '/api/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: 'huge.png', data: bigData }),
+    });
+    assert.equal(status, 400);
+    assert.ok(data.error.includes('5MB'));
+  });
+});
+
+describe('GET /api/uploads/:filename', () => {
+  let server, port, tmpDir, uploadedFilename;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-upload-get-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+    const result = createTestServer({ agentDir: tmpDir });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+
+    // Upload a file first
+    const content = Buffer.from('test image data').toString('base64');
+    const { data } = await fetchJSON(port, '/api/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: 'screenshot.png', data: content }),
+    });
+    uploadedFilename = data.filename;
+  });
+
+  after(() => { server.close(); fs.rmSync(tmpDir, { recursive: true }); });
+
+  it('serves uploaded file with correct content type', async () => {
+    const res = await fetch(`http://localhost:${port}/api/uploads/${uploadedFilename}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'image/png');
+    const body = await res.text();
+    assert.equal(body, 'test image data');
+  });
+
+  it('returns 404 for nonexistent file', async () => {
+    const { status } = await fetchJSON(port, '/api/uploads/nonexistent.png');
+    assert.equal(status, 404);
+  });
+
+  it('rejects path traversal', async () => {
+    const { status } = await fetchJSON(port, '/api/uploads/..%2F..%2Fetc%2Fpasswd');
+    assert.equal(status, 400);
   });
 });
