@@ -79,17 +79,9 @@ touch "$CYCLE_FAILED_MARKER"
 bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_start "Scheduled wake"
 step "cycle_start logged"
 
-# Pull latest framework code
-step "framework pull starting"
-if [ -z "$GH_TOKEN" ]; then
-  step "framework pull skipped — GH_TOKEN not set"
-else
-  git -C "$FRAMEWORK_DIR" pull --ff-only \
-    "https://${GH_TOKEN}@github.com/robhunter/agent-portal.git" main 200>&- 2>&1 || {
-    step "framework pull failed (non-fatal, continuing)"
-  }
-fi
-FRAMEWORK_COMMIT="$(git -C "$FRAMEWORK_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")"
+# Pull latest framework code + rollback check
+step "framework update starting"
+eval "$(bash "$FRAMEWORK_DIR/scripts/framework-update.sh" "$FRAMEWORK_DIR" "$AGENT_DIR")"
 step "framework at $FRAMEWORK_COMMIT"
 
 # Clone/pull workspaces from agent.yaml

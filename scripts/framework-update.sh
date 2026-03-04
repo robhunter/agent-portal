@@ -18,11 +18,11 @@ eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 
 CYCLE_FAILED_MARKER="/tmp/agent-${AGENT_NAME}-cycle-failed"
 
-# Pull latest framework
+# Pull latest framework (informational output to stderr)
 if [ -n "$GH_TOKEN" ]; then
   git -C "$FRAMEWORK_DIR" pull --ff-only \
-    "https://${GH_TOKEN}@github.com/robhunter/agent-portal.git" main 2>&1 || {
-    echo "Warning: framework pull failed (continuing with current version)"
+    "https://${GH_TOKEN}@github.com/robhunter/agent-portal.git" main >&2 2>&1 || {
+    echo "Warning: framework pull failed (continuing with current version)" >&2
   }
 fi
 
@@ -32,9 +32,9 @@ FRAMEWORK_COMMIT="$(git -C "$FRAMEWORK_DIR" rev-parse HEAD 2>/dev/null || echo "
 # Rollback check
 if [ -f "$CYCLE_FAILED_MARKER" ] && [ -n "$FRAMEWORK_LAST_KNOWN_GOOD" ] && [ "$FRAMEWORK_LAST_KNOWN_GOOD" != "null" ]; then
   if [ "$FRAMEWORK_COMMIT" != "$FRAMEWORK_LAST_KNOWN_GOOD" ]; then
-    echo "Previous cycle failed and framework changed — rolling back to $FRAMEWORK_LAST_KNOWN_GOOD"
-    git -C "$FRAMEWORK_DIR" checkout "$FRAMEWORK_LAST_KNOWN_GOOD" 2>&1 || {
-      echo "ERROR: rollback failed"
+    echo "Previous cycle failed and framework changed — rolling back to $FRAMEWORK_LAST_KNOWN_GOOD" >&2
+    git -C "$FRAMEWORK_DIR" checkout "$FRAMEWORK_LAST_KNOWN_GOOD" >&2 2>&1 || {
+      echo "ERROR: rollback failed" >&2
       bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" error \
         "Framework rollback to $FRAMEWORK_LAST_KNOWN_GOOD failed"
     }
