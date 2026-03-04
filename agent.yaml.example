@@ -1,0 +1,42 @@
+# agent.yaml — Per-agent configuration read by framework scripts.
+# Place this file at the root of each agent's repo.
+
+# Agent identity
+name: bobbo                          # used in logs, PID files, lock files, temp file naming
+repo: robhunter/bobbo-agent          # GitHub org/repo for push URL derivation
+port: 8080                           # portal server port
+lock-file: /tmp/bobbo-agent.lock     # mutex file path
+cron-file: /etc/cron.d/bobbo         # cron file path
+cron-schedule: "0 */2 * * *"         # cron schedule expression
+
+# Prompts — multi-line text piped to Claude on each cycle type.
+# read-config.js writes these to temp files and outputs the file path.
+wake-prompt: |
+  You are waking up for a scheduled work cycle. Follow the 'On Wake'
+  instructions in CLAUDE.md. This is an autonomous cycle — no human is present.
+  [agent-specific prompt content]
+
+respond-prompt: |
+  You are waking up for a RESPOND cycle.
+  [agent-specific prompt content]
+
+# Optional: workspaces to clone/pull before each cycle.
+# Omit or leave empty for self-contained agents (like Bobbo).
+workspaces:
+  - repo: robhunter/agentdeals
+    path: /root/workspaces/agentdeals
+    npm-install: true                # run npm install after pull
+
+# Optional: extra cron entries for agent-specific scheduled scripts.
+# These are in addition to the framework's wake.sh entry.
+extra-cron:
+  - schedule: "0 3 * * 0"
+    command: "bash scripts/reflect.sh"
+    log: "logs/cycles/cron-reflect.log"
+  - schedule: "0 18 * * 1-5"
+    command: "bash scripts/review-reminder.sh"
+    log: "logs/cycles/cron-reminder.log"
+
+# Framework versioning — updated automatically after successful cycles.
+# Do not edit manually.
+framework-last-known-good: null

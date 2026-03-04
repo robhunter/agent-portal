@@ -16,5 +16,8 @@
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
   }
 }
