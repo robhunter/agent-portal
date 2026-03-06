@@ -7,6 +7,9 @@ set -e
 
 AGENT_DIR="$1"
 JOURNAL_FILE="$2"
+if [ "$JOURNAL_FILE" = "auto" ]; then
+  JOURNAL_FILE="$(date +%Y-%m).md"
+fi
 AUTHOR="$3"
 TAG="$4"
 CONTENT="$5"
