@@ -28,6 +28,8 @@ if ! flock -n 200; then
   echo "Agent already running — skipping respond cycle"
   exit 0
 fi
+# Remove starting marker now that real flock is held
+rm -f "${AGENT_LOCK_FILE}.starting"
 
 CYCLE_TS="$(date +%Y%m%d-%H%M)"
 CYCLE_LOG="logs/cycles/${CYCLE_TS}-respond.log"
