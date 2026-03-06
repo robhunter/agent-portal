@@ -351,12 +351,13 @@ describe('POST /api/cycle/respond', () => {
 
   after(() => server.close());
 
-  it('returns 404 when respond.sh does not exist', async () => {
+  it('returns 200 when no cycle is running (respond.sh resolved from framework)', async () => {
     const { status, data } = await fetchJSON(port, '/api/cycle/respond', {
       method: 'POST',
     });
-    assert.equal(status, 404);
-    assert.ok(data.error.includes('respond.sh not found'));
+    // Should return 200 OK — respond.sh is now resolved from the framework dir
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
   });
 });
 
