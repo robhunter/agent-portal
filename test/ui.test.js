@@ -243,6 +243,17 @@ describe('buildHTML', () => {
     assert.ok(html.includes('outputs: loadOutputs'));
   });
 
+  it('includes copy raw button in outputs tab JS', () => {
+    const config = {
+      ...baseConfig,
+      features: { tabs: ['journal', 'outputs', 'status'], outputs: true },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('function copyRawOutput'));
+    assert.ok(html.includes('copy-raw-btn'));
+    assert.ok(html.includes('Copy Raw'));
+  });
+
   it('excludes outputs tab JS when not configured', () => {
     const html = buildHTML(baseConfig);
     assert.ok(!html.includes('function loadOutputs'));
