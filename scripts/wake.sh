@@ -43,6 +43,8 @@ if ! flock -n 200; then
   bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_skipped "Lock held by another cycle"
   exit 0
 fi
+# Remove starting marker now that real flock is held
+rm -f "${AGENT_LOCK_FILE}.starting"
 step "lock acquired"
 
 # Branch guard — ensure agent repo on main
