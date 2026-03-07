@@ -73,10 +73,6 @@ CYCLE_TS="$(date +%Y%m%d-%H%M)"
 CYCLE_LOG="logs/cycles/${CYCLE_TS}.log"
 CYCLE_START_EPOCH=$(date +%s)
 
-# Create cycle-failed marker (deleted on success at end of cycle)
-CYCLE_FAILED_MARKER="/tmp/agent-${AGENT_NAME}-cycle-failed"
-touch "$CYCLE_FAILED_MARKER"
-
 # Log cycle start
 bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_start "Scheduled wake"
 step "cycle_start logged"
@@ -85,6 +81,12 @@ step "cycle_start logged"
 step "framework update starting"
 eval "$(bash "$FRAMEWORK_DIR/scripts/framework-update.sh" "$FRAMEWORK_DIR" "$AGENT_DIR")"
 step "framework at $FRAMEWORK_COMMIT"
+
+# Create cycle-failed marker (deleted on success at end of cycle)
+# Placed AFTER framework update so the marker reflects the PREVIOUS cycle's status,
+# not the current one — framework-update.sh uses this marker for rollback decisions.
+CYCLE_FAILED_MARKER="/tmp/agent-${AGENT_NAME}-cycle-failed"
+touch "$CYCLE_FAILED_MARKER"
 
 # Clone/pull workspaces from agent.yaml
 if [ "$WORKSPACES_COUNT" -gt 0 ] 2>/dev/null; then
