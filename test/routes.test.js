@@ -1124,15 +1124,15 @@ describe('POST /api/upload', () => {
     assert.ok(data.error);
   });
 
-  it('rejects files over 5MB', async () => {
-    const bigData = Buffer.alloc(6 * 1024 * 1024).toString('base64');
+  it('rejects files over 50MB', async () => {
+    const bigData = Buffer.alloc(51 * 1024 * 1024).toString('base64');
     const { status, data } = await fetchJSON(port, '/api/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filename: 'huge.png', data: bigData }),
     });
     assert.equal(status, 400);
-    assert.ok(data.error.includes('5MB'));
+    assert.ok(data.error.includes('50MB'));
   });
 });
 
