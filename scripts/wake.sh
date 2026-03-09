@@ -36,24 +36,86 @@ fi
 eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 step "config loaded (name=$AGENT_NAME)"
 
-# Mutex — acquire lock immediately
+# ── LOCK ACQUISITION ──
+
+# Stale lock timeout in seconds (default: 90 minutes)
+LOCK_STALE_TIMEOUT="${AGENT_LOCK_STALE_TIMEOUT:-5400}"
+
 exec 200>"$AGENT_LOCK_FILE"
 if ! flock -n 200; then
-  step "lock held — skipping cycle"
-  bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_skipped "Lock held by another cycle"
-  exit 0
+  step "lock held — checking for stale holder"
+
+  # Write our PID to help with debugging
+  HOLDER_PID=$(fuser "$AGENT_LOCK_FILE" 2>/dev/null | tr -d ' ')
+  if [ -n "$HOLDER_PID" ]; then
+    HOLDER_AGE=$(ps -o etimes= -p "$HOLDER_PID" 2>/dev/null | tr -d ' ')
+    step "lock holder PID=$HOLDER_PID age=${HOLDER_AGE:-unknown}s (threshold=${LOCK_STALE_TIMEOUT}s)"
+
+    if [ "${HOLDER_AGE:-0}" -gt "$LOCK_STALE_TIMEOUT" ]; then
+      step "stale lock detected — killing PID $HOLDER_PID (age ${HOLDER_AGE}s > ${LOCK_STALE_TIMEOUT}s)"
+      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" recovery \
+        "Killed stale lock holder PID $HOLDER_PID (age ${HOLDER_AGE}s)"
+      kill "$HOLDER_PID" 2>/dev/null
+      sleep 2
+      # Force kill if still alive
+      kill -0 "$HOLDER_PID" 2>/dev/null && kill -9 "$HOLDER_PID" 2>/dev/null
+      sleep 1
+
+      # Retry lock acquisition
+      if ! flock -n 200; then
+        step "lock still held after killing stale holder — skipping"
+        bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_skipped \
+          "Lock held by another cycle (stale kill failed)"
+        exit 0
+      fi
+      step "lock acquired after stale holder cleanup"
+    else
+      step "lock holder is recent (${HOLDER_AGE}s < ${LOCK_STALE_TIMEOUT}s) — skipping"
+      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_skipped "Lock held by another cycle"
+      exit 0
+    fi
+  else
+    # Can't find holder PID — lock file exists but no process found
+    # This likely means the holder died without releasing the lock
+    step "no holder PID found — lock is orphaned, retrying"
+    bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" recovery \
+      "Orphaned lock detected (no holder PID), forcing cleanup"
+    # Close and reopen to clear the orphaned flock
+    exec 200>&-
+    sleep 1
+    exec 200>"$AGENT_LOCK_FILE"
+    if ! flock -n 200; then
+      step "lock still held after orphan cleanup — skipping"
+      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_skipped \
+        "Lock held by another cycle (orphan cleanup failed)"
+      exit 0
+    fi
+    step "lock acquired after orphan cleanup"
+  fi
 fi
+
+# Write our PID to lock file for debugging
+echo $$ > "$AGENT_LOCK_FILE"
+
 # Remove starting marker now that real flock is held
 rm -f "${AGENT_LOCK_FILE}.starting"
-step "lock acquired"
+step "lock acquired (PID=$$)"
 
-# Branch guard — ensure agent repo on main
+# Trap to ensure lock is released on any exit (normal, error, signal)
+trap 'flock -u 200 2>/dev/null; exec 200>&- 2>/dev/null; step "lock released via trap"' EXIT
+
+# ── BRANCH GUARD ──
+
+# Track consecutive dirty-branch skips for self-healing
+BRANCH_SKIP_COUNTER="/tmp/agent-${AGENT_NAME}-branch-skip-count"
+
 CURRENT_BRANCH="$(git branch --show-current)"
 if [ "$CURRENT_BRANCH" != "main" ]; then
   echo "WARNING: agent repo on branch '$CURRENT_BRANCH', expected 'main'"
   if git diff --quiet && git diff --cached --quiet; then
     if git checkout main 2>/dev/null; then
       step "switched to main from '$CURRENT_BRANCH'"
+      rm -f "$BRANCH_SKIP_COUNTER"
     else
       step "failed to switch to main from '$CURRENT_BRANCH' — skipping"
       bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_skipped \
@@ -61,11 +123,45 @@ if [ "$CURRENT_BRANCH" != "main" ]; then
       exit 0
     fi
   else
-    step "dirty working tree on branch '$CURRENT_BRANCH' — skipping"
-    bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_skipped \
-      "Dirty working tree on branch '$CURRENT_BRANCH', cannot switch to main"
-    exit 0
+    # Dirty working tree on non-main branch — attempt recovery after 3 skips
+    SKIP_COUNT=$(cat "$BRANCH_SKIP_COUNTER" 2>/dev/null || echo 0)
+    SKIP_COUNT=$((SKIP_COUNT + 1))
+    echo "$SKIP_COUNT" > "$BRANCH_SKIP_COUNTER"
+
+    if [ "$SKIP_COUNT" -ge 3 ]; then
+      step "dirty branch '$CURRENT_BRANCH' skip #$SKIP_COUNT — attempting recovery"
+      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" recovery \
+        "Auto-recovering from dirty branch '$CURRENT_BRANCH' after $SKIP_COUNT skips"
+
+      # Try stash + checkout (non-destructive)
+      if git stash 2>/dev/null && git checkout main 2>/dev/null; then
+        step "recovered via git stash + checkout main"
+        rm -f "$BRANCH_SKIP_COUNTER"
+      else
+        # Last resort: force checkout (destructive but better than bricked)
+        step "stash failed — force checkout main"
+        if git checkout -f main 2>/dev/null; then
+          step "recovered via force checkout main (changes lost)"
+          bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" recovery \
+            "Force checkout main — uncommitted changes on '$CURRENT_BRANCH' were lost"
+          rm -f "$BRANCH_SKIP_COUNTER"
+        else
+          step "all recovery attempts failed — skipping"
+          bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_skipped \
+            "Dirty working tree on branch '$CURRENT_BRANCH', recovery failed"
+          exit 0
+        fi
+      fi
+    else
+      step "dirty working tree on branch '$CURRENT_BRANCH' — skip #$SKIP_COUNT (recovery at 3)"
+      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_skipped \
+        "Dirty working tree on branch '$CURRENT_BRANCH', cannot switch to main (skip $SKIP_COUNT/3)"
+      exit 0
+    fi
   fi
+else
+  # On main — reset skip counter
+  rm -f "$BRANCH_SKIP_COUNTER" 2>/dev/null
 fi
 
 # Track cycle timing
@@ -109,7 +205,7 @@ if [ "$WORKSPACES_COUNT" -gt 0 ] 2>/dev/null; then
 
     if [ "$ws_npm" = "true" ] && [ -f "$ws_path/package.json" ]; then
       step "npm install for $ws_repo"
-      (cd "$ws_path" && npm install --production 2>&1) || step "npm install failed for $ws_repo (non-fatal)"
+      (cd "$ws_path" && npm install --production 200>&- 2>&1) || step "npm install failed for $ws_repo (non-fatal)"
     fi
   done
 fi
@@ -185,3 +281,8 @@ node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml" \
 step "commit starting"
 bash "$FRAMEWORK_DIR/scripts/commit.sh" "$AGENT_DIR" "autonomous cycle" 200>&-
 step "commit done"
+
+# Explicit lock release (trap will also fire, but be explicit)
+flock -u 200 2>/dev/null
+exec 200>&- 2>/dev/null
+step "lock released explicitly"
