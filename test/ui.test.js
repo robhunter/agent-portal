@@ -308,4 +308,24 @@ describe('buildHTML', () => {
     assert.ok(html.includes('textarea.drag-over'));
     assert.ok(html.includes('dashed'));
   });
+
+  it('includes todos tab JS when configured', () => {
+    const config = {
+      ...baseConfig,
+      features: { tabs: ['journal', 'todos', 'status'] },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('data-tab="todos"'));
+    assert.ok(html.includes('function loadTodos'));
+    assert.ok(html.includes('function addTodo'));
+    assert.ok(html.includes('function toggleTodo'));
+    assert.ok(html.includes('function deleteTodo'));
+    assert.ok(html.includes('todos: loadTodos'));
+  });
+
+  it('excludes todos tab JS when not configured', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(!html.includes('function loadTodos'));
+    assert.ok(!html.includes('function addTodo'));
+  });
 });
