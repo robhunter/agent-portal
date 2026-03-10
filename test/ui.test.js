@@ -44,7 +44,7 @@ describe('buildHTML', () => {
   it('includes GitHub tab when features.github is configured', () => {
     const config = {
       ...baseConfig,
-      features: { github: { repos: ['robhunter/agentdeals'] } },
+      features: { github: { repos: ['test-org/test-repo'] } },
     };
     const html = buildHTML(config);
     assert.ok(html.includes('data-tab="github"'));
@@ -91,7 +91,7 @@ describe('buildHTML', () => {
   it('includes loadGitHub when GitHub is configured', () => {
     const config = {
       ...baseConfig,
-      features: { github: { repos: ['robhunter/agentdeals'] } },
+      features: { github: { repos: ['test-org/test-repo'] } },
     };
     const html = buildHTML(config);
     assert.ok(html.includes('function loadGitHub'));

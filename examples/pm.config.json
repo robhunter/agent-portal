@@ -11,7 +11,7 @@
   },
   "features": {
     "github": {
-      "repos": ["robhunter/agentdeals", "robhunter/agent-pm"]
+      "repos": ["your-org/your-project", "your-org/your-agent"]
     },
     "tabs": ["journal", "github", "roadmap", "health", "requests", "status"],
     "cronToggle": true,

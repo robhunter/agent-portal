@@ -301,7 +301,7 @@ describe('Journal edit integration', () => {
 describe('Config variations', () => {
   it('boots with GitHub repos configured', async () => {
     const result = bootPortal({
-      features: { github: { repos: ['robhunter/agent-portal'] } },
+      features: { github: { repos: ['test-org/test-portal'] } },
     });
     const server = result.server;
     await new Promise(resolve => server.listen(0, resolve));
@@ -344,7 +344,7 @@ describe('PM portal integration', () => {
         pm: { color: '#00695c', bg: '#e0f2f1' },
       },
       features: {
-        github: { repos: ['robhunter/agentdeals'] },
+        github: { repos: ['test-org/test-repo'] },
         tabs: ['journal', 'github', 'roadmap', 'health', 'requests', 'status'],
         cronToggle: true,
         cycleButtons: true,
@@ -581,7 +581,7 @@ describe('Coder config regression check', () => {
     const result = bootPortal({
       name: 'Coder',
       features: {
-        github: { repos: ['robhunter/agentdeals'] },
+        github: { repos: ['test-org/test-repo'] },
         tabs: ['journal', 'github', 'status'],
       },
     });
