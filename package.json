@@ -1,6 +1,6 @@
 {
   "name": "@robhunter/agent-portal",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Shared web portal for autonomous agents",
   "main": "index.js",
   "bin": {

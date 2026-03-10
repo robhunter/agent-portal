@@ -19,11 +19,18 @@ eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 CYCLE_FAILED_MARKER="/tmp/agent-${AGENT_NAME}-cycle-failed"
 
 # Pull latest framework (informational output to stderr)
-if [ -n "$GH_TOKEN" ]; then
-  git -C "$FRAMEWORK_DIR" pull --ff-only \
-    "https://${GH_TOKEN}@github.com/robhunter/agent-portal.git" main >&2 2>&1 || {
+# Derive remote URL from git origin rather than hardcoding
+REMOTE_URL=$(git -C "$FRAMEWORK_DIR" remote get-url origin 2>/dev/null || echo "")
+if [ -n "$REMOTE_URL" ]; then
+  # Inject GH_TOKEN for HTTPS authentication if available
+  if [ -n "$GH_TOKEN" ]; then
+    REMOTE_URL=$(echo "$REMOTE_URL" | sed "s|https://github.com/|https://${GH_TOKEN}@github.com/|")
+  fi
+  git -C "$FRAMEWORK_DIR" pull --ff-only "$REMOTE_URL" main >&2 2>&1 || {
     echo "Warning: framework pull failed (continuing with current version)" >&2
   }
+else
+  echo "Warning: no git remote configured for framework directory" >&2
 fi
 
 # Record current framework commit
