@@ -11,7 +11,7 @@
   },
   "features": {
     "github": {
-      "repos": ["robhunter/agentdeals"]
+      "repos": ["your-org/your-project"]
     }
   }
 }

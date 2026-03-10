@@ -14,7 +14,7 @@ In your container, clone into `/root/workspaces/agent-portal`:
 
 ```bash
 mkdir -p /root/workspaces
-git clone "https://${GH_TOKEN}@github.com/robhunter/agent-portal.git" /root/workspaces/agent-portal
+git clone "https://${GH_TOKEN}@github.com/your-org/agent-portal.git" /root/workspaces/agent-portal
 ```
 
 ### 2. Create your config file
