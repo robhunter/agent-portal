@@ -17,6 +17,10 @@ AGENT_DIR="${2:?Usage: framework-update.sh <framework-dir> <agent-dir>}"
 eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 
 CYCLE_FAILED_MARKER="/tmp/agent-${AGENT_NAME}-cycle-failed"
+PORTAL_PID_FILE="/tmp/${AGENT_NAME}-portal.pid"
+
+# Record commit before pull to detect changes
+PRE_PULL_COMMIT="$(git -C "$FRAMEWORK_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")"
 
 # Pull latest framework (informational output to stderr)
 # Derive remote URL from git origin rather than hardcoding
@@ -36,6 +40,18 @@ fi
 # Record current framework commit
 FRAMEWORK_COMMIT="$(git -C "$FRAMEWORK_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")"
 
+# Restart portal if framework code changed
+if [ "$PRE_PULL_COMMIT" != "$FRAMEWORK_COMMIT" ] && [ "$PRE_PULL_COMMIT" != "unknown" ]; then
+  echo "Framework updated ($PRE_PULL_COMMIT → $FRAMEWORK_COMMIT) — restarting portal" >&2
+  if [ -f "$PORTAL_PID_FILE" ]; then
+    PORTAL_PID=$(cat "$PORTAL_PID_FILE" 2>/dev/null)
+    if [ -n "$PORTAL_PID" ] && kill -0 "$PORTAL_PID" 2>/dev/null; then
+      kill "$PORTAL_PID" 2>/dev/null
+      echo "Killed portal process (PID $PORTAL_PID) — supervisor will restart with new code" >&2
+    fi
+  fi
+fi
+
 # Rollback check
 if [ -f "$CYCLE_FAILED_MARKER" ] && [ -n "$FRAMEWORK_LAST_KNOWN_GOOD" ] && [ "$FRAMEWORK_LAST_KNOWN_GOOD" != "null" ]; then
   if [ "$FRAMEWORK_COMMIT" != "$FRAMEWORK_LAST_KNOWN_GOOD" ]; then
@@ -48,6 +64,14 @@ if [ -f "$CYCLE_FAILED_MARKER" ] && [ -n "$FRAMEWORK_LAST_KNOWN_GOOD" ] && [ "$F
     FRAMEWORK_COMMIT="$FRAMEWORK_LAST_KNOWN_GOOD"
     bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" rollback \
       "Rolled back framework to $FRAMEWORK_LAST_KNOWN_GOOD"
+    # Restart portal again with the rolled-back code
+    if [ -f "$PORTAL_PID_FILE" ]; then
+      PORTAL_PID=$(cat "$PORTAL_PID_FILE" 2>/dev/null)
+      if [ -n "$PORTAL_PID" ] && kill -0 "$PORTAL_PID" 2>/dev/null; then
+        kill "$PORTAL_PID" 2>/dev/null
+        echo "Killed portal after rollback (PID $PORTAL_PID)" >&2
+      fi
+    fi
   fi
 fi
 
