@@ -53,6 +53,38 @@ Agent response.
     assert.equal(notes[1].author, 'coder');
     assert.equal(notes[1].content, 'Agent response.');
   });
+  it('parses multi-line todos with indented continuation', () => {
+    const content = `## Todos
+
+- [ ] First todo
+  with more detail
+  and another line
+- [x] Simple done
+- [ ] Third todo
+  continued here
+
+## Notes
+`;
+    const { todos } = parseTodos(content);
+    assert.equal(todos.length, 3);
+    assert.equal(todos[0].text, 'First todo\nwith more detail\nand another line');
+    assert.equal(todos[0].done, false);
+    assert.equal(todos[1].text, 'Simple done');
+    assert.equal(todos[1].done, true);
+    assert.equal(todos[2].text, 'Third todo\ncontinued here');
+  });
+
+  it('round-trips multi-line todos', () => {
+    const todos = [
+      { text: 'Multi line\nwith detail', done: false },
+      { text: 'Simple', done: true },
+    ];
+    const md = serializeTodos(todos, []);
+    assert.ok(md.includes('- [ ] Multi line\n  with detail'));
+    const parsed = parseTodos(md);
+    assert.equal(parsed.todos[0].text, 'Multi line\nwith detail');
+    assert.equal(parsed.todos[1].text, 'Simple');
+  });
 });
 
 describe('serializeTodos', () => {
