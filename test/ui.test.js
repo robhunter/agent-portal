@@ -102,6 +102,25 @@ describe('buildHTML', () => {
     assert.ok(html.includes('"name":"TestAgent"'));
   });
 
+  it('passes githubRepos to PORTAL_CONFIG when GitHub configured', () => {
+    const config = {
+      ...baseConfig,
+      features: { github: { repos: ['org/repo1', 'org/repo2'] } },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('"githubRepos":["org/repo1","org/repo2"]'));
+  });
+
+  it('includes tracked projects toggle in GitHub tab JS', () => {
+    const config = {
+      ...baseConfig,
+      features: { github: { repos: ['org/repo1'] } },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('toggleProjectsSection'));
+    assert.ok(html.includes('Tracked Projects'));
+  });
+
   it('supports custom tab order via features.tabs', () => {
     const config = {
       ...baseConfig,
