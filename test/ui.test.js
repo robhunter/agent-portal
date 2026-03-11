@@ -121,6 +121,27 @@ describe('buildHTML', () => {
     assert.ok(html.includes('Tracked Projects'));
   });
 
+  it('includes URL-based deep linking for outputs tab', () => {
+    const config = {
+      ...baseConfig,
+      features: { tabs: ['journal', 'outputs'], outputs: true },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes("params.get('tab')"));
+    assert.ok(html.includes("params.get('file')"));
+    assert.ok(html.includes('viewOutput(urlFile)'));
+  });
+
+  it('outputs tab updates URL on viewOutput', () => {
+    const config = {
+      ...baseConfig,
+      features: { tabs: ['journal', 'outputs'], outputs: true },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes("params.set('tab', 'outputs')"));
+    assert.ok(html.includes("params.set('file', filename)"));
+  });
+
   it('supports custom tab order via features.tabs', () => {
     const config = {
       ...baseConfig,
