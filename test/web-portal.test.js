@@ -147,6 +147,13 @@ describe('web portal — client core JS integrity', () => {
     assert.ok(html.includes('/api/next-run'), 'Core JS should fetch /api/next-run');
   });
 
+  it('client core references timeseries API and chart builder', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(html.includes('/api/events/timeseries'), 'Core JS should fetch /api/events/timeseries');
+    assert.ok(html.includes('buildSvgChart'), 'Core JS should include SVG chart builder function');
+    assert.ok(html.includes('ts-chart'), 'Core JS should reference chart CSS classes');
+  });
+
   it('client core references correct API endpoints for cron and cycle', () => {
     const html = buildHTML(baseConfig);
     assert.ok(html.includes('/api/cron/toggle'), 'Core JS should reference /api/cron/toggle');

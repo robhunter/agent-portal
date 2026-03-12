@@ -246,6 +246,75 @@ describe('GET /api/events', () => {
   });
 });
 
+describe('GET /api/events/timeseries', () => {
+  let server, port, tmpDir;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-ts-'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const events = [
+      `{"ts":"${yesterday}T08:00:00Z","type":"cycle_start","summary":"Scheduled wake"}`,
+      `{"ts":"${yesterday}T08:10:00Z","type":"work","summary":"Shipped PR","project":"test"}`,
+      `{"ts":"${yesterday}T08:15:00Z","type":"cycle_end","summary":"Done","duration_s":900,"duration_m":15}`,
+      `{"ts":"${today}T08:00:00Z","type":"cycle_start","summary":"Scheduled wake"}`,
+      `{"ts":"${today}T08:05:00Z","type":"error","summary":"Test failed"}`,
+      `{"ts":"${today}T08:10:00Z","type":"cycle_end","summary":"Done","duration_s":600,"duration_m":10}`,
+      `{"ts":"${today}T10:00:00Z","type":"cycle_start","summary":"Scheduled wake"}`,
+      `{"ts":"${today}T10:05:00Z","type":"idle","summary":"No issues"}`,
+      `{"ts":"${today}T10:06:00Z","type":"cycle_end","summary":"Done","duration_s":360,"duration_m":6}`,
+    ];
+    fs.writeFileSync(path.join(tmpDir, 'logs', 'events.jsonl'), events.join('\n') + '\n');
+    const result = createTestServer({ agentDir: tmpDir });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => { server.close(); fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it('returns 30-day series with correct structure', async () => {
+    const { status, data } = await fetchJSON(port, '/api/events/timeseries');
+    assert.equal(status, 200);
+    assert.equal(data.days, 30);
+    assert.ok(Array.isArray(data.series));
+    assert.equal(data.series.length, 30);
+    // Each entry has expected fields
+    const entry = data.series[0];
+    assert.ok('date' in entry);
+    assert.ok('cycles' in entry);
+    assert.ok('work' in entry);
+    assert.ok('errors' in entry);
+    assert.ok('avgDuration' in entry);
+  });
+
+  it('aggregates events correctly by day', async () => {
+    const { data } = await fetchJSON(port, '/api/events/timeseries');
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const todayEntry = data.series.find(d => d.date === today);
+    const yesterdayEntry = data.series.find(d => d.date === yesterday);
+    assert.equal(todayEntry.cycles, 2);
+    assert.equal(todayEntry.errors, 1);
+    assert.equal(todayEntry.idle, 1);
+    assert.equal(todayEntry.avgDuration, 8); // (10+6)/2
+    assert.equal(yesterdayEntry.cycles, 1);
+    assert.equal(yesterdayEntry.work, 1);
+    assert.equal(yesterdayEntry.avgDuration, 15);
+  });
+
+  it('returns zeros for days with no events', async () => {
+    const { data } = await fetchJSON(port, '/api/events/timeseries');
+    const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+    const entry = data.series.find(d => d.date === twoDaysAgo);
+    assert.equal(entry.cycles, 0);
+    assert.equal(entry.work, 0);
+    assert.equal(entry.errors, 0);
+    assert.equal(entry.avgDuration, 0);
+  });
+});
+
 describe('GET /api/wins', () => {
   let server, port;
 
