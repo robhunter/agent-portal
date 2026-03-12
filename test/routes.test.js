@@ -134,6 +134,24 @@ describe('GET /api/journal', () => {
       assert.ok(data.entries[i].ts >= data.entries[i - 1].ts);
     }
   });
+
+  it('supports limit parameter for pagination', async () => {
+    const { status, data } = await fetchJSON(port, '/api/journal?limit=2');
+    assert.equal(status, 200);
+    assert.equal(data.entries.length, 2);
+    assert.equal(data.hasMore, true);
+    // Should return the last 2 entries (newest)
+    const all = (await fetchJSON(port, '/api/journal')).data;
+    assert.equal(data.entries[1].ts, all.entries[all.entries.length - 1].ts);
+  });
+
+  it('supports before parameter for cursor pagination', async () => {
+    const all = (await fetchJSON(port, '/api/journal')).data;
+    const midTs = all.entries[2].ts;
+    const { data } = await fetchJSON(port, '/api/journal?limit=10&before=' + encodeURIComponent(midTs));
+    assert.ok(data.entries.every(e => e.ts < midTs));
+    assert.equal(data.hasMore, false);
+  });
 });
 
 describe('POST /api/journal', () => {
