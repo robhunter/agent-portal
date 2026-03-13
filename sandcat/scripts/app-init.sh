@@ -13,7 +13,7 @@ set -e
 
 AGENT_DIR="${1:?Usage: app-init.sh <agent-dir>}"
 
-CA_CERT="/mitmproxy-config/mitmproxy-ca-cert.pem"
+CA_CERT="/sandcat-certs/mitmproxy-ca-cert.pem"
 
 # ── Install mitmproxy CA certificate ─────────────────────────────────────
 # The CA cert is guaranteed to exist: agent depends_on wg-client (healthy),
@@ -51,7 +51,7 @@ export GIT_CONFIG_VALUE_0="false"
 GITEOF
 
 # ── Source env vars and secret placeholders ──────────────────────────────
-SANDCAT_ENV="/mitmproxy-config/sandcat.env"
+SANDCAT_ENV="/sandcat-certs/sandcat.env"
 if [ -f "$SANDCAT_ENV" ]; then
     . "$SANDCAT_ENV"
     # Make vars available to new shells (e.g. subshells, cron-invoked

@@ -31,10 +31,16 @@ done
 # mitmproxy stores its WireGuard key pairs as JSON:
 #   {"server_key": "<server-private>", "client_key": "<client-private>"}
 # We need the client's private key and the server's public key (derived from
-# the server's private key).
+# the server's private key). Keys are read into variables and never written
+# to disk outside the mitmproxy-config volume.
 client_private_key=$(jq -r .client_key "$WG_JSON")
-server_private_key=$(jq -r .server_key "$WG_JSON")
-server_public_key=$(echo "$server_private_key" | wg pubkey)
+server_public_key=$(jq -r .server_key "$WG_JSON" | wg pubkey)
+
+# ── Export safe files to sandcat-certs volume ─────────────────────────────
+# The agent container mounts sandcat-certs (not mitmproxy-config) so it
+# never has access to WireGuard private keys — only the CA cert and env vars.
+cp /mitmproxy-config/mitmproxy-ca-cert.pem /sandcat-certs/ 2>/dev/null || true
+cp /mitmproxy-config/sandcat.env /sandcat-certs/ 2>/dev/null || true
 
 # Resolve the mitmproxy endpoint IP before setting up the tunnel, since DNS
 # won't be available through the normal path after routing is configured.

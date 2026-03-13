@@ -31,12 +31,30 @@ FRAMEWORK_DIR="${2:-$(cd "$(dirname "$0")/.." && pwd)}"
 FRAMEWORK_DIR="$(cd "$FRAMEWORK_DIR" && pwd)"
 
 # ── Read agent.yaml ───────────────────────────────────────────────────────
-# Parse the few scalar fields we need with grep/awk (no Node.js dependency).
-AGENT_NAME=$(grep '^name:' "$AGENT_DIR/agent.yaml" | awk '{print $2}')
-AGENT_PORT=$(grep '^port:' "$AGENT_DIR/agent.yaml" | awk '{print $2}')
+# This script runs on the HOST machine where Node.js may not be installed
+# (npm install happens inside the container later). Shell parsing is
+# intentional to keep host prerequisites minimal: just Docker + Compose.
+# The sed trims quotes, trailing comments, and whitespace for robustness.
+_yaml_value() {
+    grep "^${1}:" "$AGENT_DIR/agent.yaml" \
+        | sed 's/^[^:]*:[[:space:]]*//' \
+        | sed "s/[[:space:]]*#.*//" \
+        | sed "s/^[\"']//" \
+        | sed "s/[\"']$//" \
+        | sed 's/[[:space:]]*$//'
+}
+
+AGENT_NAME=$(_yaml_value name)
+AGENT_PORT=$(_yaml_value port)
 
 if [ -z "$AGENT_NAME" ] || [ -z "$AGENT_PORT" ]; then
     echo "ERROR: Could not read 'name' or 'port' from $AGENT_DIR/agent.yaml" >&2
+    exit 1
+fi
+
+# Validate port is numeric
+if ! echo "$AGENT_PORT" | grep -qE '^[0-9]+$'; then
+    echo "ERROR: 'port' in agent.yaml is not a valid number: $AGENT_PORT" >&2
     exit 1
 fi
 
@@ -108,7 +126,7 @@ services:
       - $AGENT_DIR:$CONTAINER_AGENT_DIR
       - $FRAMEWORK_DIR:$CONTAINER_FRAMEWORK_DIR
       - ${HOME}/.claude:/root/.claude
-      - mitmproxy-config:/mitmproxy-config:ro
+      - sandcat-certs:/sandcat-certs:ro
     entrypoint: ["bash", "$CONTAINER_FRAMEWORK_DIR/sandcat/scripts/app-init.sh", "$CONTAINER_AGENT_DIR"]
     environment:
       - CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
