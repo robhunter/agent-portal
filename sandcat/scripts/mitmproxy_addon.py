@@ -40,8 +40,12 @@ class SandcatAddon:
         layers = []
         for path in SETTINGS_PATHS:
             if os.path.isfile(path):
-                with open(path) as f:
-                    layers.append(json.load(f))
+                try:
+                    with open(path) as f:
+                        layers.append(json.load(f))
+                except (json.JSONDecodeError, OSError) as e:
+                    ctx.log.error(f"Failed to load {path}: {e}")
+                    raise
 
         if not layers:
             logger.info("No settings files found — addon disabled")
