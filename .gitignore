@@ -4,3 +4,5 @@ node_modules/
 test/fixtures/tmp-*
 code_review.md
 .agent-workspaces/
+scripts/memory-venv/
+scripts/__pycache__/
