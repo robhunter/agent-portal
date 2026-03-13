@@ -1,0 +1,231 @@
+#!/bin/bash
+#
+# scripts/docker-compose-create.sh — Generate and launch a Sandcat-isolated
+# Docker Compose stack for an agent.
+#
+# Usage: docker-compose-create.sh <agent-dir> [framework-dir]
+#
+# Run from the HOST machine (macOS or Linux), not inside a container.
+#
+# This creates a three-container stack:
+#   - mitmproxy: holds real secrets, substitutes placeholders for allowed hosts
+#   - wg-client: WireGuard tunnel + iptables kill switch
+#   - agent: runs the agent with placeholder env vars (no real secrets)
+#
+# Prerequisites:
+#   - Docker and Docker Compose (v2.20+) installed
+#   - ~/sandcat-secrets/<agent-name>/settings.json exists with real credentials
+#   - Agent repo cloned at <agent-dir> with agent.yaml
+#
+# After creation, authenticate Claude inside the container:
+#   docker compose -f ~/sandcat-stacks/<name>/docker-compose.yml \
+#     exec agent bash -c 'source ~/.nvm/nvm.sh && claude'
+#
+set -e
+
+# ── Arguments ─────────────────────────────────────────────────────────────
+AGENT_DIR="${1:?Usage: docker-compose-create.sh <agent-dir> [framework-dir]}"
+AGENT_DIR="$(cd "$AGENT_DIR" && pwd)"
+
+FRAMEWORK_DIR="${2:-$(cd "$(dirname "$0")/.." && pwd)}"
+FRAMEWORK_DIR="$(cd "$FRAMEWORK_DIR" && pwd)"
+
+# ── Read agent.yaml ───────────────────────────────────────────────────────
+# This script runs on the HOST machine where Node.js may not be installed
+# (npm install happens inside the container later). Shell parsing is
+# intentional to keep host prerequisites minimal: just Docker + Compose.
+# The sed trims quotes, trailing comments, and whitespace for robustness.
+_yaml_value() {
+    grep "^${1}:" "$AGENT_DIR/agent.yaml" \
+        | sed 's/^[^:]*:[[:space:]]*//' \
+        | sed "s/[[:space:]]*#.*//" \
+        | sed "s/^[\"']//" \
+        | sed "s/[\"']$//" \
+        | sed 's/[[:space:]]*$//'
+}
+
+AGENT_NAME=$(_yaml_value name)
+AGENT_PORT=$(_yaml_value port)
+
+if [ -z "$AGENT_NAME" ] || [ -z "$AGENT_PORT" ]; then
+    echo "ERROR: Could not read 'name' or 'port' from $AGENT_DIR/agent.yaml" >&2
+    exit 1
+fi
+
+# Validate port is numeric
+if ! echo "$AGENT_PORT" | grep -qE '^[0-9]+$'; then
+    echo "ERROR: 'port' in agent.yaml is not a valid number: $AGENT_PORT" >&2
+    exit 1
+fi
+
+CONTAINER_AGENT_DIR="/root/$AGENT_NAME"
+CONTAINER_FRAMEWORK_DIR="/root/workspaces/agent-portal"
+
+echo "=== Sandcat Stack: $AGENT_NAME ==="
+echo "  Agent directory:     $AGENT_DIR"
+echo "  Framework directory: $FRAMEWORK_DIR"
+echo "  Agent port:          $AGENT_PORT"
+
+# ── Validate settings.json ────────────────────────────────────────────────
+SETTINGS_DIR="$HOME/sandcat-secrets/$AGENT_NAME"
+SETTINGS_FILE="$SETTINGS_DIR/settings.json"
+
+if [ ! -f "$SETTINGS_FILE" ]; then
+    echo "" >&2
+    echo "ERROR: Settings file not found: $SETTINGS_FILE" >&2
+    echo "" >&2
+    echo "Create it with:" >&2
+    echo "  mkdir -p $SETTINGS_DIR && chmod 700 $SETTINGS_DIR" >&2
+    echo "  # Write settings.json with secrets and network rules" >&2
+    echo "  chmod 600 $SETTINGS_FILE" >&2
+    exit 1
+fi
+
+echo "  Settings file:       $SETTINGS_FILE"
+
+# ── Prepare output directory ──────────────────────────────────────────────
+STACK_DIR="$HOME/sandcat-stacks/$AGENT_NAME"
+mkdir -p "$STACK_DIR"
+
+# ── Generate compose .env ─────────────────────────────────────────────────
+# Docker Compose reads .env automatically for variable substitution in yml.
+# Preserve existing web password if already generated.
+if [ -f "$STACK_DIR/.env" ] && grep -q '^MITMPROXY_WEB_PASSWORD=' "$STACK_DIR/.env"; then
+    MITMPROXY_WEB_PASSWORD=$(grep '^MITMPROXY_WEB_PASSWORD=' "$STACK_DIR/.env" | cut -d= -f2)
+else
+    MITMPROXY_WEB_PASSWORD=$(openssl rand -hex 16)
+fi
+
+cat > "$STACK_DIR/.env" << EOF
+SANDCAT_SETTINGS_PATH=$SETTINGS_FILE
+MITMPROXY_WEB_PASSWORD=$MITMPROXY_WEB_PASSWORD
+EOF
+
+echo "  Compose env:         $STACK_DIR/.env"
+
+# ── Generate docker-compose.yml ───────────────────────────────────────────
+# The compose file includes the shared compose-proxy.yml (mitmproxy +
+# wg-client) and adds the agent service. The agent shares wg-client's
+# network namespace so all traffic goes through the WireGuard tunnel.
+#
+# The framework is bind-mounted from the host so app-init.sh (the
+# entrypoint) is available immediately — no need to clone the framework
+# inside the container.
+cat > "$STACK_DIR/docker-compose.yml" << COMPOSEOF
+# Auto-generated by docker-compose-create.sh for agent: $AGENT_NAME
+# Do not edit manually. Re-run docker-compose-create.sh to regenerate.
+
+include:
+  - path: $FRAMEWORK_DIR/sandcat/compose-proxy.yml
+
+services:
+  agent:
+    image: ubuntu:24.04
+    network_mode: "service:wg-client"
+    volumes:
+      - $AGENT_DIR:$CONTAINER_AGENT_DIR
+      - $FRAMEWORK_DIR:$CONTAINER_FRAMEWORK_DIR
+      - ${HOME}/.claude:/root/.claude
+      - sandcat-certs:/sandcat-certs:ro
+    entrypoint: ["bash", "$CONTAINER_FRAMEWORK_DIR/sandcat/scripts/app-init.sh", "$CONTAINER_AGENT_DIR"]
+    environment:
+      - CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+    restart: unless-stopped
+    depends_on:
+      wg-client:
+        condition: service_healthy
+
+  # Port must be exposed on wg-client because agent shares its network
+  # namespace. Docker Compose merges this with the wg-client definition
+  # from compose-proxy.yml.
+  wg-client:
+    ports:
+      - "${AGENT_PORT}:${AGENT_PORT}"
+COMPOSEOF
+
+echo "  Compose file:        $STACK_DIR/docker-compose.yml"
+
+# ── Stop existing containers ──────────────────────────────────────────────
+# Stop any existing single-container setup (pre-Sandcat)
+if docker ps -a --format '{{.Names}}' | grep -q "^${AGENT_NAME}$"; then
+    echo ""
+    echo "Stopping existing $AGENT_NAME container..."
+    docker stop "$AGENT_NAME" 2>/dev/null || true
+    docker rm -f "$AGENT_NAME" 2>/dev/null || true
+fi
+
+# Stop any existing compose stack
+docker compose -f "$STACK_DIR/docker-compose.yml" down 2>/dev/null || true
+
+# ── Build and start the stack ─────────────────────────────────────────────
+echo ""
+echo "Starting Docker Compose stack..."
+docker compose -f "$STACK_DIR/docker-compose.yml" up -d --build
+
+# ── Wait for healthchecks ─────────────────────────────────────────────────
+echo "Waiting for services to be healthy..."
+TIMEOUT=120
+ELAPSED=0
+while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+    # Check if wg-client is healthy (tunnel + iptables ready)
+    WG_STATUS=$(docker compose -f "$STACK_DIR/docker-compose.yml" \
+        ps --format json wg-client 2>/dev/null || echo "")
+    if echo "$WG_STATUS" | grep -q '"healthy"'; then
+        echo "  wg-client is healthy (tunnel ready)"
+        break
+    fi
+    sleep 2
+    ELAPSED=$((ELAPSED + 2))
+done
+
+if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+    echo "ERROR: Timed out waiting for wg-client to become healthy" >&2
+    echo "  Check logs: docker compose -f $STACK_DIR/docker-compose.yml logs" >&2
+    exit 1
+fi
+
+# ── Run setup inside agent container ──────────────────────────────────────
+COMPOSE="docker compose -f $STACK_DIR/docker-compose.yml"
+
+echo ""
+echo "Installing system packages..."
+$COMPOSE exec -T agent bash -c \
+    "apt-get update -qq && apt-get install -y -qq curl jq git cron ca-certificates > /dev/null 2>&1 \
+     && update-ca-certificates 2>/dev/null"
+
+echo "Running vm-setup.sh..."
+$COMPOSE exec -T agent bash -c \
+    "source /etc/profile.d/sandcat-env.sh 2>/dev/null; \
+     cd $CONTAINER_AGENT_DIR && \
+     bash $CONTAINER_FRAMEWORK_DIR/scripts/vm-setup.sh"
+
+echo "Installing framework dependencies..."
+$COMPOSE exec -T agent bash -c \
+    "source ~/.nvm/nvm.sh && \
+     cd $CONTAINER_FRAMEWORK_DIR && \
+     npm install --production"
+
+# ── Restart agent service for clean boot ──────────────────────────────────
+echo ""
+echo "Restarting agent service for clean boot..."
+$COMPOSE restart agent
+
+sleep 3
+
+# ── Done ──────────────────────────────────────────────────────────────────
+echo ""
+echo "=== Sandcat stack for $AGENT_NAME is ready ==="
+echo ""
+echo "  NEXT STEP: Authenticate Claude:"
+echo "    $COMPOSE exec agent bash -c 'source ~/.nvm/nvm.sh && claude'"
+echo ""
+echo "  Web portal:  http://localhost:$AGENT_PORT"
+echo "  Status API:  curl http://localhost:$AGENT_PORT/api/status"
+echo ""
+echo "  Compose commands:"
+echo "    $COMPOSE ps"
+echo "    $COMPOSE logs agent --tail 50"
+echo "    $COMPOSE exec agent bash"
+echo ""
+echo "  mitmproxy web UI (password in $STACK_DIR/.env):"
+echo "    $COMPOSE port mitmproxy 8081"
