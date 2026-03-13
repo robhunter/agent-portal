@@ -40,11 +40,44 @@ _dns.DNSFlow = type("DNSFlow", (), {})
 _dns.response_codes = _ResponseCodes()
 
 
-class _Headers(dict):
-    """Minimal mitmproxy-like headers for testing."""
+class _Headers:
+    """Minimal mitmproxy-like multidict headers for testing.
+
+    Stores headers as a tuple of (name_bytes, value_bytes) pairs in .fields,
+    matching mitmproxy's real Headers interface. Supports duplicate header
+    names (multi-valued headers).
+    """
+
+    def __init__(self, mapping=None):
+        if mapping:
+            self.fields = tuple(
+                (k.encode() if isinstance(k, str) else k,
+                 v.encode() if isinstance(v, str) else v)
+                for k, v in mapping.items()
+            )
+        else:
+            self.fields = ()
 
     def items(self):
-        return list(super().items())
+        return [(k.decode(), v.decode()) for k, v in self.fields]
+
+    def __getitem__(self, key):
+        key_bytes = key.encode() if isinstance(key, str) else key
+        for k, v in self.fields:
+            if k.lower() == key_bytes.lower():
+                return v.decode() if isinstance(v, bytes) else v
+        raise KeyError(key)
+
+    def __setitem__(self, key, value):
+        key_bytes = key.encode() if isinstance(key, str) else key
+        value_bytes = value.encode() if isinstance(value, str) else value
+        self.fields = tuple(
+            (k, v) for k, v in self.fields if k.lower() != key_bytes.lower()
+        ) + ((key_bytes, value_bytes),)
+
+    def __contains__(self, key):
+        key_bytes = key.encode() if isinstance(key, str) else key
+        return any(k.lower() == key_bytes.lower() for k, _ in self.fields)
 
 
 class _Request:

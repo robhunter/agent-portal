@@ -172,7 +172,8 @@ COMPOSE="docker compose -f $STACK_DIR/docker-compose.yml"
 echo ""
 echo "Installing system packages..."
 $COMPOSE exec -T agent bash -c \
-    "apt-get update -qq && apt-get install -y -qq curl jq git cron ca-certificates > /dev/null 2>&1"
+    "apt-get update -qq && apt-get install -y -qq curl jq git cron ca-certificates > /dev/null 2>&1 \
+     && update-ca-certificates 2>/dev/null"
 
 echo "Running vm-setup.sh..."
 $COMPOSE exec -T agent bash -c \

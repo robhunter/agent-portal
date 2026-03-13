@@ -126,12 +126,14 @@ class SandcatAddon:
             value = entry["value"]
             allowed_hosts = entry["hosts"]
 
+            placeholder_bytes = placeholder.encode()
+
             present = (
                 placeholder in flow.request.url
-                or placeholder in str(flow.request.headers)
+                or any(placeholder_bytes in v for _, v in flow.request.headers.fields)
                 or (
                     flow.request.content
-                    and placeholder.encode() in flow.request.content
+                    and placeholder_bytes in flow.request.content
                 )
             )
 
@@ -150,14 +152,19 @@ class SandcatAddon:
                 )
                 return
 
+            value_bytes = value.encode()
+
             if placeholder in flow.request.url:
                 flow.request.url = flow.request.url.replace(placeholder, value)
-            for k, v in flow.request.headers.items():
-                if placeholder in v:
-                    flow.request.headers[k] = v.replace(placeholder, value)
-            if flow.request.content and placeholder.encode() in flow.request.content:
+            # Use .fields (raw byte tuples) to preserve multi-valued headers.
+            # headers[k] = v would collapse duplicate header names.
+            flow.request.headers.fields = tuple(
+                (k, v.replace(placeholder_bytes, value_bytes)) if placeholder_bytes in v else (k, v)
+                for k, v in flow.request.headers.fields
+            )
+            if flow.request.content and placeholder_bytes in flow.request.content:
                 flow.request.content = flow.request.content.replace(
-                    placeholder.encode(), value.encode()
+                    placeholder_bytes, value_bytes
                 )
 
     def request(self, flow: http.HTTPFlow):
