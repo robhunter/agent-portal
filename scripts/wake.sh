@@ -80,9 +80,10 @@ if ! flock -n 200; then
     step "no holder PID found — lock is orphaned, retrying"
     bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" recovery \
       "Orphaned lock detected (no holder PID), forcing cleanup"
-    # Close and reopen to clear the orphaned flock
+    # Close our fd, delete the file (unlinking the old inode that holds
+    # the orphaned flock), then create a fresh file on a new inode.
     exec 200>&-
-    sleep 1
+    rm -f "$AGENT_LOCK_FILE"
     exec 200>"$AGENT_LOCK_FILE"
     if ! flock -n 200; then
       step "lock still held after orphan cleanup — skipping"
