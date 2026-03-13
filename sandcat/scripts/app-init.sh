@@ -24,8 +24,13 @@ if [ ! -f "$CA_CERT" ]; then
     exit 1
 fi
 
+mkdir -p /usr/local/share/ca-certificates
 cp "$CA_CERT" /usr/local/share/ca-certificates/mitmproxy.crt
-update-ca-certificates 2>/dev/null
+# update-ca-certificates may not exist on first boot (ca-certificates is
+# installed by docker-compose-create.sh setup step, then the container is
+# restarted). The || true prevents set -e from killing the entrypoint.
+# NODE_EXTRA_CA_CERTS (set below) handles Node.js regardless.
+update-ca-certificates 2>/dev/null || true
 
 # Node.js ignores the system trust store and bundles its own CA certs.
 # Point it at the mitmproxy CA so TLS verification works for Node-based
