@@ -11,8 +11,10 @@ Sandcat runs each agent in a three-container Docker Compose stack so the agent n
 
 ### 1. Create the settings file
 
+From your agent repo directory (the one containing `agent.yaml`):
+
 ```bash
-bash sandcat/scripts/create-settings.sh /path/to/agent-repo
+bash /path/to/agent-portal/sandcat/scripts/create-settings.sh .
 ```
 
 This creates `~/sandcat-secrets/<agent-name>/settings.json` with a template. If the agent has a `.env` file, tokens and API keys are placed in the secrets section and git identity vars are carried over to the env section.
@@ -22,7 +24,7 @@ Edit the file and replace placeholder values with real credentials.
 ### 2. Launch the stack
 
 ```bash
-bash scripts/docker-compose-create.sh /path/to/agent-repo
+bash /path/to/agent-portal/scripts/docker-compose-create.sh .
 ```
 
 This generates a Docker Compose stack at `~/sandcat-stacks/<agent-name>/`, builds the containers, installs dependencies, and starts everything.
