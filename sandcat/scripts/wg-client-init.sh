@@ -40,7 +40,8 @@ server_public_key=$(jq -r .server_key "$WG_JSON" | wg pubkey)
 # The agent container mounts sandcat-certs (not mitmproxy-config) so it
 # never has access to WireGuard private keys — only the CA cert and env vars.
 cp /mitmproxy-config/mitmproxy-ca-cert.pem /sandcat-certs/ 2>/dev/null || true
-cp /mitmproxy-config/sandcat.env /sandcat-certs/ 2>/dev/null || true
+cp /mitmproxy-config/sandcat.env /sandcat-certs/
+echo "Copied sandcat.env to sandcat-certs volume"
 
 # Resolve the mitmproxy endpoint IP before setting up the tunnel, since DNS
 # won't be available through the normal path after routing is configured.

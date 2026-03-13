@@ -35,7 +35,7 @@ services:
       - ./scripts/mitmproxy_addon.py:/scripts/mitmproxy_addon.py:ro
       - ${SANDCAT_SETTINGS_PATH}:/config/settings.json:ro
     healthcheck:
-      test: ["CMD", "test", "-f", "/home/mitmproxy/.mitmproxy/wireguard.conf"]
+      test: ["CMD", "test", "-f", "/home/mitmproxy/.mitmproxy/wireguard.conf", "-a", "-f", "/home/mitmproxy/.mitmproxy/sandcat.env"]
       interval: 2s
       timeout: 2s
       retries: 15
