@@ -127,7 +127,8 @@ ip6tables -I OUTPUT -o eth0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 docker_network_v6=$(ip -6 route show dev eth0 proto kernel 2>/dev/null | awk '{print $1}')
 if [ -n "$docker_network_v6" ]; then
     docker_gateway_v6=$(ip -6 route show default dev eth0 2>/dev/null | awk '{print $3}')
-    ip6tables -A OUTPUT -o eth0 -d "$mitmproxy_ip" -j DROP
+    mitmproxy_ip_v6=$(getent ahostsv6 mitmproxy 2>/dev/null | awk '{print $1; exit}')
+    [ -n "$mitmproxy_ip_v6" ] && ip6tables -A OUTPUT -o eth0 -d "$mitmproxy_ip_v6" -j DROP
     [ -n "$docker_gateway_v6" ] && ip6tables -A OUTPUT -o eth0 -d "$docker_gateway_v6" -j DROP
     ip6tables -A OUTPUT -o eth0 -d "$docker_network_v6" -j ACCEPT
 fi
