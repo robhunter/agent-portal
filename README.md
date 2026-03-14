@@ -64,6 +64,10 @@ You should see JSON status from the first and `<!DOCTYPE html>` from the second.
 
 Once verified, the old `scripts/portal-server.js` can be removed. It is no longer needed.
 
+## Secrets Isolation
+
+For production deployments, agents can run behind a Sandcat proxy that keeps real credentials out of the agent container. See [`sandcat/README.md`](sandcat/README.md) for setup instructions.
+
 ## Updating
 
 To update the portal, pull the latest code in the workspace:
