@@ -231,13 +231,14 @@ $COMPOSE exec -T agent bash -c \
 
 echo "Running vm-setup.sh..."
 $COMPOSE exec -T agent bash -c \
-    "source /etc/profile.d/sandcat-env.sh 2>/dev/null; \
+    "for f in /etc/profile.d/sandcat-*.sh; do [ -r \"\$f\" ] && source \"\$f\"; done; \
      cd $CONTAINER_AGENT_DIR && \
      bash $CONTAINER_FRAMEWORK_DIR/scripts/vm-setup.sh"
 
 echo "Installing framework dependencies..."
 $COMPOSE exec -T agent bash -c \
-    "source ~/.nvm/nvm.sh && \
+    "for f in /etc/profile.d/sandcat-*.sh; do [ -r \"\$f\" ] && source \"\$f\"; done; \
+     source ~/.nvm/nvm.sh && \
      cd $CONTAINER_FRAMEWORK_DIR && \
      npm install --production"
 
