@@ -258,6 +258,10 @@ fi
 bash "$FRAMEWORK_DIR/scripts/run-hooks.sh" "$FRAMEWORK_DIR" "$AGENT_DIR" post-cycle
 step "post-cycle hooks done"
 
+# Memory consolidation (Phase 3) — runs when cycle count threshold is met
+bash "$FRAMEWORK_DIR/scripts/consolidate-memory.sh" "$AGENT_DIR" 2>&1 | while IFS= read -r line; do step "consolidation: $line"; done || \
+  step "consolidation: skipped or failed (non-fatal)"
+
 # Dispatch pending notification
 NOTIFY_FILE="pending_notification.txt"
 if [ -s "$NOTIFY_FILE" ]; then
