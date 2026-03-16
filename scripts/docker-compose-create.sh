@@ -168,6 +168,7 @@ services:
     entrypoint: ["bash", "$CONTAINER_FRAMEWORK_DIR/sandcat/scripts/app-init.sh", "$CONTAINER_AGENT_DIR"]
     environment:
       - CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+      - NODE_EXTRA_CA_CERTS=/sandcat-certs/mitmproxy-ca-cert.pem
     restart: unless-stopped
     depends_on:
       wg-client:
