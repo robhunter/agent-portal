@@ -14,11 +14,13 @@ cd "$AGENT_DIR"
 # Read agent config
 eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 
-# nvm sourcing prefix so claude is on PATH in cron
-NVM_SOURCE='export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" &&'
+# Environment sourcing prefix for cron jobs:
+# - Sandcat profile scripts (env vars + NODE_EXTRA_CA_CERTS)
+# - nvm so claude/node are on PATH
+CRON_ENV='for f in /etc/profile.d/sandcat-*.sh; do [ -r "$f" ] && . "$f"; done; export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" &&'
 
 # Main wake entry from agent.yaml
-WAKE_LINE="${AGENT_CRON_SCHEDULE} root ${NVM_SOURCE} cd ${AGENT_DIR} && bash ${FRAMEWORK_DIR}/scripts/wake.sh ${AGENT_DIR} >> logs/cycles/cron-wake.log 2>&1"
+WAKE_LINE="${AGENT_CRON_SCHEDULE} root ${CRON_ENV} cd ${AGENT_DIR} && bash ${FRAMEWORK_DIR}/scripts/wake.sh ${AGENT_DIR} >> logs/cycles/cron-wake.log 2>&1"
 
 # Build all cron lines
 CRON_LINES="$WAKE_LINE"
@@ -31,7 +33,7 @@ if [ "$EXTRA_CRON_COUNT" -gt 0 ] 2>/dev/null; then
     log_var="EXTRA_CRON_${i}_LOG"
     schedule="${!sched_var}"; command="${!cmd_var}"; logfile="${!log_var}"
 
-    EXTRA_LINE="${schedule} root ${NVM_SOURCE} cd ${AGENT_DIR} && ${command} >> ${logfile} 2>&1"
+    EXTRA_LINE="${schedule} root ${CRON_ENV} cd ${AGENT_DIR} && ${command} >> ${logfile} 2>&1"
     CRON_LINES="$CRON_LINES
 $EXTRA_LINE"
   done
