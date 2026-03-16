@@ -24,12 +24,18 @@ step() {
 
 step "wake.sh started (framework=$FRAMEWORK_DIR, agent=$AGENT_DIR)"
 
-# Source .env for GH_TOKEN, Telegram tokens, git identity
+# Source sandcat profile scripts if available (Sandcat containers inject
+# env vars via /etc/profile.d/ but cron doesn't inherit them)
+for _f in /etc/profile.d/sandcat-*.sh; do
+  [ -r "$_f" ] && . "$_f"
+done
+
+# Source .env if present (pre-Sandcat containers use .env for secrets)
 if [ -f "$AGENT_DIR/.env" ]; then
   set -a; . "$AGENT_DIR/.env"; set +a
   step ".env sourced (GH_TOKEN=${GH_TOKEN:+set}${GH_TOKEN:-MISSING})"
 else
-  step ".env not found at $AGENT_DIR/.env"
+  step ".env not found at $AGENT_DIR/.env (skipping — using container environment)"
 fi
 
 # Read agent config

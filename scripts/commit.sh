@@ -10,7 +10,12 @@ MSG="${2:-agent state update}"
 
 cd "$AGENT_DIR"
 
-# Source .env if GH_TOKEN not already set (cron doesn't inherit Docker env vars)
+# Source sandcat profile scripts if available (cron doesn't inherit container env)
+for _f in /etc/profile.d/sandcat-*.sh; do
+  [ -r "$_f" ] && . "$_f"
+done
+
+# Source .env if GH_TOKEN still not set (pre-Sandcat fallback)
 if [ -z "$GH_TOKEN" ] && [ -f "$AGENT_DIR/.env" ]; then
   set -a; . "$AGENT_DIR/.env"; set +a
 fi
