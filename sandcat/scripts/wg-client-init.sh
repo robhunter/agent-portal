@@ -78,6 +78,20 @@ ip -6 route add ::/0 dev wg0 table 51820
 ip -6 rule add not fwmark 51820 table 51820
 ip -6 rule add table main suppress_prefixlength 0
 
+# ── Route Docker port-forwarded responses back via eth0 ───────────────────
+# Docker port mapping forwards host TCP connections to eth0, but the policy
+# routing above sends ALL outbound traffic through wg0 — including response
+# packets. This breaks inbound connections (e.g. the web portal). Use
+# connmark to track inbound TCP connections on eth0 and route their
+# responses through the main table (which goes via eth0).
+# Scoped to TCP to avoid interfering with WireGuard's UDP fwmark (51820).
+iptables -t mangle -A INPUT -i eth0 -p tcp -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1
+iptables -t mangle -A OUTPUT -p tcp -m connmark --mark 0x1 -j MARK --set-mark 0x1
+ip -4 rule add fwmark 0x1 table main priority 100
+ip6tables -t mangle -A INPUT -i eth0 -p tcp -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1
+ip6tables -t mangle -A OUTPUT -p tcp -m connmark --mark 0x1 -j MARK --set-mark 0x1
+ip -6 rule add fwmark 0x1 table main priority 100
+
 # ── Override DNS ──────────────────────────────────────────────────────────
 # Docker's embedded DNS at 127.0.0.11 resolves queries on the host,
 # bypassing the WireGuard tunnel. Point resolv.conf at an external
