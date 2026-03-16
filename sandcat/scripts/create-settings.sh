@@ -141,11 +141,7 @@ cat > "$SETTINGS_FILE" << JSONEOF
   "secrets": {$SECRET_VARS
   },
   "network": [
-    {"action": "allow", "host": "github.com"},
-    {"action": "allow", "host": "*.github.com"},
-    {"action": "allow", "host": "*.anthropic.com"},
-    {"action": "allow", "host": "*.claude.ai"},
-    {"action": "allow", "host": "*", "method": "GET"}
+    {"action": "allow", "host": "*"}
   ]
 }
 JSONEOF
@@ -167,9 +163,8 @@ fi
 echo "  If your agent needs additional secrets (API keys, tokens), add them"
 echo "  to the \"secrets\" section with their allowed hosts."
 echo ""
-echo "  If your agent needs to POST/PUT to hosts beyond github.com, add"
-echo "  rules to the \"network\" section. GET requests to any host are"
-echo "  allowed by default."
+echo "  Network rules default to allow-all. To restrict outbound access,"
+echo "  replace the wildcard rule with specific host allowlists."
 echo ""
 echo "Then run the stack:"
 echo "  bash scripts/docker-compose-create.sh $AGENT_DIR"

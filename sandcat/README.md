@@ -55,11 +55,7 @@ The settings file lives on the host at `~/sandcat-secrets/<agent-name>/settings.
     }
   },
   "network": [
-    {"action": "allow", "host": "github.com"},
-    {"action": "allow", "host": "*.github.com"},
-    {"action": "allow", "host": "*.anthropic.com"},
-    {"action": "allow", "host": "*.claude.ai"},
-    {"action": "allow", "host": "*", "method": "GET"}
+    {"action": "allow", "host": "*"}
   ]
 }
 ```
@@ -74,7 +70,7 @@ Each key is an env var name. `value` is the real credential. `hosts` is a list o
 
 ### network
 
-Outbound HTTP/S firewall rules. Evaluated top-to-bottom, first match wins, default deny. `host` supports glob patterns. Optional `method` field restricts to a specific HTTP method. The `GET *` rule lets the agent read any website while restricting writes to explicitly allowed hosts.
+Outbound HTTP/S firewall rules. Evaluated top-to-bottom, first match wins, default deny. `host` supports glob patterns. Optional `method` field restricts to a specific HTTP method. The default `allow *` rule permits all outbound traffic — secrets are still protected by the per-secret `hosts` scoping. Replace with specific host rules to restrict network access.
 
 ## Verification
 
