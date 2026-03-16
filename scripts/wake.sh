@@ -282,10 +282,23 @@ rm -f "$CYCLE_FAILED_MARKER"
 node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml" \
   --set "framework-last-known-good=$FRAMEWORK_COMMIT"
 
-# Git commit
+# Git commit and push
 step "commit starting"
 bash "$FRAMEWORK_DIR/scripts/commit.sh" "$AGENT_DIR" "autonomous cycle" 200>&-
 step "commit done"
+
+# Push (commit.sh pushes too, but log it explicitly for visibility)
+if [ -n "$GH_TOKEN" ] && [ -n "$AGENT_REPO" ]; then
+  step "push starting"
+  if git -C "$AGENT_DIR" push "https://${GH_TOKEN}@github.com/${AGENT_REPO}.git" \
+       "$(git -C "$AGENT_DIR" branch --show-current)" 200>&- 2>&1; then
+    step "push done"
+  else
+    step "push failed (non-fatal)"
+  fi
+else
+  step "push skipped (GH_TOKEN=${GH_TOKEN:+set}${GH_TOKEN:-MISSING}, AGENT_REPO=${AGENT_REPO:-MISSING})"
+fi
 
 # Explicit lock release (trap will also fire, but be explicit)
 flock -u 200 2>/dev/null
