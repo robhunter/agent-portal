@@ -26,9 +26,9 @@ describe('parseTodos', () => {
 `;
     const { todos } = parseTodos(content);
     assert.equal(todos.length, 3);
-    assert.deepEqual(todos[0], { text: 'Buy milk', done: false });
-    assert.deepEqual(todos[1], { text: 'Write tests', done: true });
-    assert.deepEqual(todos[2], { text: 'Deploy', done: false });
+    assert.deepEqual(todos[0], { text: 'Buy milk', done: false, details: '' });
+    assert.deepEqual(todos[1], { text: 'Write tests', done: true, details: '' });
+    assert.deepEqual(todos[2], { text: 'Deploy', done: false, details: '' });
   });
 
   it('parses notes section', () => {
@@ -84,6 +84,54 @@ Agent response.
     const parsed = parseTodos(md);
     assert.equal(parsed.todos[0].text, 'Multi line\nwith detail');
     assert.equal(parsed.todos[1].text, 'Simple');
+  });
+  it('parses todos with details (blockquote lines)', () => {
+    const content = `## Todos
+
+- [ ] Email mcpserverfinder.com
+  > Copy the following text:
+  > Hello, we would like to list agentdeals.
+  > - bullet one
+  > - bullet two
+- [ ] Simple todo
+
+## Notes
+`;
+    const { todos } = parseTodos(content);
+    assert.equal(todos.length, 2);
+    assert.equal(todos[0].text, 'Email mcpserverfinder.com');
+    assert.equal(todos[0].details, 'Copy the following text:\nHello, we would like to list agentdeals.\n- bullet one\n- bullet two');
+    assert.equal(todos[1].text, 'Simple todo');
+    assert.equal(todos[1].details, '');
+  });
+
+  it('round-trips todos with details', () => {
+    const todos = [
+      { text: 'Todo with info', done: false, details: 'Line 1\nLine 2\n- bullet' },
+      { text: 'No info', done: true, details: '' },
+    ];
+    const md = serializeTodos(todos, []);
+    assert.ok(md.includes('  > Line 1'));
+    assert.ok(md.includes('  > Line 2'));
+    assert.ok(md.includes('  > - bullet'));
+    const parsed = parseTodos(md);
+    assert.equal(parsed.todos[0].details, 'Line 1\nLine 2\n- bullet');
+    assert.equal(parsed.todos[1].details, '');
+  });
+
+  it('parses todos with both continuation text and details', () => {
+    const content = `## Todos
+
+- [ ] Multi line todo
+  continued here
+  > Detail info
+  > More detail
+
+## Notes
+`;
+    const { todos } = parseTodos(content);
+    assert.equal(todos[0].text, 'Multi line todo\ncontinued here');
+    assert.equal(todos[0].details, 'Detail info\nMore detail');
   });
 });
 
@@ -251,6 +299,35 @@ describe('Todos API', () => {
       body: JSON.stringify({ index: 99, done: true }),
     });
     assert.equal(status, 400);
+  });
+
+  it('POST /api/todos with details', async () => {
+    await fetchJSON(port, '/api/todos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'With details', details: 'Extra info here' }),
+    });
+
+    const { data } = await fetchJSON(port, '/api/todos');
+    assert.equal(data.todos[0].text, 'With details');
+    assert.equal(data.todos[0].details, 'Extra info here');
+  });
+
+  it('PUT /api/todos updates details', async () => {
+    await fetchJSON(port, '/api/todos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Update me' }),
+    });
+
+    await fetchJSON(port, '/api/todos', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index: 0, details: 'New details\n- with bullets' }),
+    });
+
+    const { data } = await fetchJSON(port, '/api/todos');
+    assert.equal(data.todos[0].details, 'New details\n- with bullets');
   });
 
   it('does not register routes when todos not in tabs', () => {
