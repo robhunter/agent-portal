@@ -4,6 +4,34 @@ Shared web portal for autonomous agents. Config-driven — each agent provides a
 
 Zero external dependencies. Uses Node built-in modules only (marked.js loaded from CDN in the browser).
 
+## Quick Start
+
+Run these from the host machine, in your agent's repo directory (the one with `agent.yaml` and `.env`), with agent-portal cloned as a sibling directory.
+
+### Option A: Single container (simple)
+
+```bash
+bash ../agent-portal/scripts/docker-create.sh .
+```
+
+Creates a single Docker container, clones the framework inside it, installs dependencies, and starts the agent. Secrets live in the `.env` file mounted into the container.
+
+### Option B: Sandcat (secrets isolation)
+
+```bash
+bash ../agent-portal/sandcat/scripts/create-settings.sh .
+# Edit ~/sandcat-secrets/<agent-name>/settings.json with real credentials
+bash ../agent-portal/scripts/docker-compose-create.sh .
+```
+
+Creates a three-container stack (agent + mitmproxy + WireGuard) where the agent never holds real credentials. See [`sandcat/README.md`](sandcat/README.md) for details.
+
+### Then authenticate Claude
+
+```bash
+docker exec -it <agent-name> bash -c 'source ~/.nvm/nvm.sh && claude'
+```
+
 ## Installation
 
 Agent Portal is deployed as a git-pulled workspace — the same pattern used for `claude-tools` and other shared repos.
