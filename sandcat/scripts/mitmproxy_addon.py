@@ -13,6 +13,7 @@ Network rules are evaluated top-to-bottom, first match wins, default deny.
 Secret placeholders are replaced with real values only for allowed hosts.
 """
 
+import base64
 import json
 import logging
 import os
@@ -141,6 +142,25 @@ class SandcatAddon:
                 )
             )
 
+            # Also check inside Base64-encoded Basic auth headers.
+            # Tools like git encode credentials as Basic base64(user:pass),
+            # hiding the placeholder from a raw byte scan.
+            basic_auth_match = False
+            if not present:
+                for k, v in flow.request.headers.fields:
+                    if k.lower() != b"authorization":
+                        continue
+                    if not v.startswith(b"Basic "):
+                        continue
+                    try:
+                        decoded = base64.b64decode(v[6:]).decode("utf-8", errors="replace")
+                    except Exception:
+                        continue
+                    if placeholder in decoded:
+                        present = True
+                        basic_auth_match = True
+                        break
+
             if not present:
                 continue
 
@@ -162,10 +182,27 @@ class SandcatAddon:
                 flow.request.url = flow.request.url.replace(placeholder, value)
             # Use .fields (raw byte tuples) to preserve multi-valued headers.
             # headers[k] = v would collapse duplicate header names.
-            flow.request.headers.fields = tuple(
-                (k, v.replace(placeholder_bytes, value_bytes)) if placeholder_bytes in v else (k, v)
-                for k, v in flow.request.headers.fields
-            )
+            if basic_auth_match:
+                # Decode Basic auth, substitute placeholder, re-encode.
+                def _sub_basic(k: bytes, v: bytes) -> tuple[bytes, bytes]:
+                    if k.lower() != b"authorization" or not v.startswith(b"Basic "):
+                        return (k, v)
+                    try:
+                        decoded = base64.b64decode(v[6:])
+                        if placeholder_bytes not in decoded:
+                            return (k, v)
+                        replaced = decoded.replace(placeholder_bytes, value_bytes)
+                        return (k, b"Basic " + base64.b64encode(replaced))
+                    except Exception:
+                        return (k, v)
+                flow.request.headers.fields = tuple(
+                    _sub_basic(k, v) for k, v in flow.request.headers.fields
+                )
+            else:
+                flow.request.headers.fields = tuple(
+                    (k, v.replace(placeholder_bytes, value_bytes)) if placeholder_bytes in v else (k, v)
+                    for k, v in flow.request.headers.fields
+                )
             if flow.request.content and placeholder_bytes in flow.request.content:
                 flow.request.content = flow.request.content.replace(
                     placeholder_bytes, value_bytes
