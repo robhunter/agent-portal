@@ -57,11 +57,55 @@ CRITICAL: Your ENTIRE output will be sent directly as a Telegram message. Do NOT
 
 If the message implies actions (reprioritize, new project, dig deeper on something), do them using tools, then confirm what you did in your response."
 
+# Session continuation: reuse session if last human message was within 24 hours
+SESSION_FILE="logs/telegram_session_id"
+SESSION_ARGS=""
+
+PREV_HUMAN_TS=$(grep '"role":"human"' logs/conversation.jsonl | tail -2 | head -1 | jq -r '.ts // ""')
+if [ -n "$PREV_HUMAN_TS" ] && [ -f "$SESSION_FILE" ]; then
+  PREV_EPOCH=$(date -d "$PREV_HUMAN_TS" +%s 2>/dev/null || echo 0)
+  NOW_EPOCH=$(date +%s)
+  AGE=$((NOW_EPOCH - PREV_EPOCH))
+  SAVED_SESSION=$(cat "$SESSION_FILE")
+  if [ "$AGE" -lt 86400 ] && [ "$AGE" -ge 0 ] && [ -n "$SAVED_SESSION" ]; then
+    SESSION_ARGS="--resume $SAVED_SESSION"
+    echo "Continuing session $SAVED_SESSION (last message ${AGE}s ago)"
+  fi
+fi
+
+# Start a new session if not continuing
+if [ -z "$SESSION_ARGS" ]; then
+  NEW_SESSION=$(cat /proc/sys/kernel/random/uuid)
+  SESSION_ARGS="--session-id $NEW_SESSION"
+  echo "$NEW_SESSION" > "$SESSION_FILE"
+  echo "Starting new session $NEW_SESSION"
+fi
+
+run_claude() {
+  echo "$FULL_PROMPT" | claude --print \
+    "$@" \
+    --allowedTools "Edit" "Write" "Read" "Bash(grep:*)" "Bash(jq:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(wc:*)" "Bash(date:*)" "Bash(git:*)" \
+    2>>logs/respond_errors.log
+}
+
 set +e
-RESPONSE=$(echo "$FULL_PROMPT" | claude --print \
-  --allowedTools "Edit" "Write" "Read" "Bash(grep:*)" "Bash(jq:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(wc:*)" "Bash(date:*)" "Bash(git:*)" \
-  2>>logs/respond_errors.log)
-CLAUDE_EXIT=$?
+if echo "$SESSION_ARGS" | grep -q -- '--resume'; then
+  SAVED_SESSION=$(echo "$SESSION_ARGS" | awk '{print $2}')
+  RESPONSE=$(run_claude --resume "$SAVED_SESSION")
+  CLAUDE_EXIT=$?
+  # Fallback: if --resume failed, start a fresh session
+  if [ "$CLAUDE_EXIT" -ne 0 ]; then
+    echo "Resume failed (exit $CLAUDE_EXIT), starting fresh session"
+    NEW_SESSION=$(cat /proc/sys/kernel/random/uuid)
+    echo "$NEW_SESSION" > "$SESSION_FILE"
+    RESPONSE=$(run_claude --session-id "$NEW_SESSION")
+    CLAUDE_EXIT=$?
+  fi
+else
+  NEW_SESSION=$(echo "$SESSION_ARGS" | awk '{print $2}')
+  RESPONSE=$(run_claude --session-id "$NEW_SESSION")
+  CLAUDE_EXIT=$?
+fi
 set -e
 
 if [ "$CLAUDE_EXIT" -ne 0 ]; then
