@@ -42,6 +42,12 @@ fi
 eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 step "config loaded (name=$AGENT_NAME)"
 
+# Set timezone if configured
+if [ -n "$AGENT_TIMEZONE" ]; then
+  export TZ="$AGENT_TIMEZONE"
+  step "timezone set to $TZ"
+fi
+
 # ── LOCK ACQUISITION ──
 
 # Stale lock timeout in seconds (default: 90 minutes)

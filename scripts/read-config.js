@@ -64,6 +64,7 @@ const scalars = {
   AGENT_LOCK_FILE: doc['lock-file'],
   AGENT_CRON_FILE: doc['cron-file'],
   AGENT_CRON_SCHEDULE: doc['cron-schedule'],
+  AGENT_TIMEZONE: doc.timezone,
   FRAMEWORK_LAST_KNOWN_GOOD: doc['framework-last-known-good'],
 };
 

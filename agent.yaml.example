@@ -8,6 +8,7 @@ port: 8080                           # portal server port
 lock-file: /tmp/my-agent.lock         # mutex file path
 cron-file: /etc/cron.d/my-agent      # cron file path
 cron-schedule: "0 */2 * * *"         # cron schedule expression
+timezone: America/Los_Angeles        # optional: TZ for timestamps (default: container's TZ)
 
 # Prompts — multi-line text piped to Claude on each cycle type.
 # read-config.js writes these to temp files and outputs the file path.
