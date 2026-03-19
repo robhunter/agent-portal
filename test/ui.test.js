@@ -292,6 +292,9 @@ describe('buildHTML', () => {
     assert.ok(html.includes('function copyRawOutput'));
     assert.ok(html.includes('copy-raw-btn'));
     assert.ok(html.includes('Copy Raw'));
+    // Clipboard API fallback for insecure contexts
+    assert.ok(html.includes('window.isSecureContext'), 'checks isSecureContext before using Clipboard API');
+    assert.ok(html.includes('document.execCommand'), 'falls back to execCommand for insecure contexts');
   });
 
   it('excludes outputs tab JS when not configured', () => {
