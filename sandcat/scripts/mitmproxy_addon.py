@@ -179,7 +179,11 @@ class SandcatAddon:
             value_bytes = value.encode()
 
             if placeholder in flow.request.url:
-                flow.request.url = flow.request.url.replace(placeholder, value)
+                # Substitute in .path (which includes query string) rather than
+                # .url to avoid the url setter triggering host= which calls
+                # _update_host_and_authority() and overwrites the Host header
+                # with the raw IP in transparent/wireguard mode.
+                flow.request.path = flow.request.path.replace(placeholder, value)
             # Use .fields (raw byte tuples) to preserve multi-valued headers.
             # headers[k] = v would collapse duplicate header names.
             if basic_auth_match:
