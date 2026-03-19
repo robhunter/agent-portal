@@ -67,9 +67,11 @@ _is_secret_name() {
 
 _default_hosts() {
     case "$1" in
-        GH_TOKEN)       echo '["github.com", "*.github.com"]' ;;
-        GEMINI_API_KEY) echo '["*.googleapis.com", "generativelanguage.googleapis.com"]' ;;
-        *)              echo '[]' ;;
+        GH_TOKEN)         echo '["github.com", "*.github.com"]' ;;
+        GEMINI_API_KEY)   echo '["*.googleapis.com", "generativelanguage.googleapis.com"]' ;;
+        TELEGRAM_TOKEN)   echo '["api.telegram.org"]' ;;
+        TELEGRAM_CHAT_ID) echo '["api.telegram.org"]' ;;
+        *)                echo '[]' ;;
     esac
 }
 
