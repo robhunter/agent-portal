@@ -75,5 +75,28 @@ if [ -f "$CYCLE_FAILED_MARKER" ] && [ -n "$FRAMEWORK_LAST_KNOWN_GOOD" ] && [ "$F
   fi
 fi
 
+# Detect stale portal process — covers local merges, not just remote pulls.
+# The pre-pull/post-pull check above only catches remote changes. If portal
+# code is merged locally (e.g. agent merges its own PR), HEAD changes but the
+# portal process keeps serving old code. This section compares the running
+# portal's commit (stored when last started) with current HEAD.
+PORTAL_COMMIT_FILE="/tmp/${AGENT_NAME}-portal-commit"
+CURRENT_PORTAL_COMMIT="$(git -C "$FRAMEWORK_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")"
+
+if [ -f "$PORTAL_COMMIT_FILE" ]; then
+  RUNNING_PORTAL_COMMIT=$(cat "$PORTAL_COMMIT_FILE" 2>/dev/null || echo "unknown")
+  if [ "$RUNNING_PORTAL_COMMIT" != "$CURRENT_PORTAL_COMMIT" ] && [ "$RUNNING_PORTAL_COMMIT" != "unknown" ]; then
+    echo "Portal code is stale ($RUNNING_PORTAL_COMMIT → $CURRENT_PORTAL_COMMIT) — restarting portal" >&2
+    if [ -f "$PORTAL_PID_FILE" ]; then
+      PORTAL_PID=$(cat "$PORTAL_PID_FILE" 2>/dev/null)
+      if [ -n "$PORTAL_PID" ] && kill -0 "$PORTAL_PID" 2>/dev/null; then
+        kill "$PORTAL_PID" 2>/dev/null
+        echo "Killed stale portal process (PID $PORTAL_PID) — supervisor will restart" >&2
+      fi
+    fi
+  fi
+fi
+echo "$CURRENT_PORTAL_COMMIT" > "$PORTAL_COMMIT_FILE"
+
 # Export for wake.sh to use after a successful cycle
 echo "FRAMEWORK_COMMIT='$FRAMEWORK_COMMIT'"
