@@ -44,4 +44,11 @@ function getStatus(agent) {
   });
 }
 
-module.exports = { getStatus, composeFile, composeArgs };
+function streamLogsArgs(agent, service, tail) {
+  const args = ['compose', ...composeArgs(agent.name, agent.deployment), 'logs', '--follow'];
+  if (tail) args.push('--tail', String(tail));
+  if (service) args.push(service);
+  return args;
+}
+
+module.exports = { getStatus, composeFile, composeArgs, streamLogsArgs };

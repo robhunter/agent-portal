@@ -1,7 +1,9 @@
 const { verifyCaller, AuthError } = require('./auth');
 const { checkPermission, listVisibleAgents } = require('./permissions');
-const { getStatus } = require('./docker');
+const { getStatus, streamLogsArgs } = require('./docker');
+const { streamProcess } = require('./stream');
 const { getAgent } = require('./config');
+const url = require('url');
 
 function createRouter(config) {
   const routes = {};
@@ -37,6 +39,18 @@ function createRouter(config) {
     const agent = getAgent(config, params.name);
     const status = await getStatus(agent);
     respond(res, 200, { ok: true, agent: params.name, status });
+  });
+
+  route('GET', '/agents/:name/logs', async (req, res, { caller, params }) => {
+    const perm = checkPermission(config, caller.callerId, params.name, 'logs');
+    if (!perm.allowed) return respond(res, perm.statusCode, { ok: false, error: perm.reason });
+
+    const agent = getAgent(config, params.name);
+    const parsed = url.parse(req.url, true);
+    const service = parsed.query.service || null;
+    const tail = parsed.query.tail || '100';
+    const args = streamLogsArgs(agent, service, tail);
+    streamProcess(res, 'docker', args);
   });
 
   // --- Request handler ---
