@@ -79,4 +79,27 @@ function cycleArgs(agent) {
   return execArgs(agent, ['bash', 'scripts/wake.sh']);
 }
 
-module.exports = { getStatus, composeFile, composeArgs, streamLogsArgs, lifecycleCommand, execArgs, cycleArgs };
+function rebuildScript(config, agent) {
+  const scriptName = agent.deployment === 'sandcat' ? 'docker-compose-create.sh' : 'docker-create.sh';
+  return {
+    command: 'bash',
+    args: [path.join(config.frameworkDir, 'scripts', scriptName), agent.dir],
+  };
+}
+
+// Simple in-memory job store for async rebuilds
+const jobs = new Map();
+let jobCounter = 0;
+
+function createJob(agentName) {
+  const id = `rb-${++jobCounter}-${Date.now()}`;
+  const job = { id, agent: agentName, status: 'running', output: [], startedAt: new Date().toISOString() };
+  jobs.set(id, job);
+  return job;
+}
+
+function getJob(id) {
+  return jobs.get(id) || null;
+}
+
+module.exports = { getStatus, composeFile, composeArgs, streamLogsArgs, lifecycleCommand, execArgs, cycleArgs, rebuildScript, createJob, getJob };
