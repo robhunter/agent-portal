@@ -1,0 +1,17 @@
+{
+  "name": "agent-controller",
+  "version": "0.1.0",
+  "description": "Constrained API for managing agent Docker stacks",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "vestauth": "^0.23.0"
+  }
+}
