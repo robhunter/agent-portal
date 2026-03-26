@@ -23,7 +23,7 @@ function makeTestConfig() {
         controllable: true,
         deployment: 'sandcat',
         permissions: {
-          agentbox: new Set(['status', 'restart', 'stop', 'start', 'logs', 'exec', 'cycle']),
+          agentbox: new Set(['status', 'restart', 'stop', 'start', 'logs', 'exec', 'cycle', 'rebuild']),
         },
       },
       'locked-agent': {
@@ -202,5 +202,26 @@ describe('routes', () => {
   it('returns 403 for cycle on non-controllable agent', async () => {
     const res = await request(server, 'POST', '/agents/locked-agent/cycle', 'sign');
     assert.equal(res.status, 403);
+  });
+
+  // --- Rebuild route ---
+
+  it('returns 403 for rebuild on non-controllable agent', async () => {
+    const res = await request(server, 'POST', '/agents/locked-agent/rebuild', 'sign');
+    assert.equal(res.status, 403);
+  });
+
+  it('returns 200 with job ID for rebuild', async () => {
+    const res = await request(server, 'POST', '/agents/test-agent/rebuild', 'sign');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    assert.ok(res.body.jobId);
+    assert.ok(res.body.logsUrl);
+    assert.match(res.body.logsUrl, /rebuild/);
+  });
+
+  it('returns 404 for unknown rebuild job ID', async () => {
+    const res = await request(server, 'GET', '/agents/test-agent/rebuild/rb-nonexistent', 'sign');
+    assert.equal(res.status, 404);
   });
 });

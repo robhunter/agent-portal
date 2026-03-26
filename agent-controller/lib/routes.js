@@ -1,7 +1,8 @@
 const { verifyCaller, AuthError } = require('./auth');
 const { checkPermission, listVisibleAgents } = require('./permissions');
-const { getStatus, streamLogsArgs, lifecycleCommand, execArgs, cycleArgs } = require('./docker');
-const { streamProcess } = require('./stream');
+const { getStatus, streamLogsArgs, lifecycleCommand, execArgs, cycleArgs, rebuildScript, createJob, getJob } = require('./docker');
+const { streamProcess, sseHeaders, sseData, sseEnd } = require('./stream');
+const { spawn } = require('child_process');
 const { getAgent } = require('./config');
 const url = require('url');
 
@@ -91,6 +92,76 @@ function createRouter(config) {
     const agent = getAgent(config, params.name);
     const args = cycleArgs(agent);
     streamProcess(res, 'docker', args);
+  });
+
+  // --- Rebuild routes ---
+
+  route('POST', '/agents/:name/rebuild', async (req, res, { caller, params }) => {
+    const perm = checkPermission(config, caller.callerId, params.name, 'rebuild');
+    if (!perm.allowed) return respond(res, perm.statusCode, { ok: false, error: perm.reason });
+
+    const agent = getAgent(config, params.name);
+    const { command, args } = rebuildScript(config, agent);
+    const job = createJob(params.name);
+
+    // Run rebuild in background, capture output
+    const proc = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    function capture(stream) {
+      stream.on('data', (chunk) => {
+        const lines = chunk.toString().split('\n').filter(l => l.trim());
+        job.output.push(...lines);
+      });
+    }
+    capture(proc.stdout);
+    capture(proc.stderr);
+
+    proc.on('close', (code) => {
+      job.status = code === 0 ? 'completed' : 'failed';
+      job.exitCode = code;
+      job.completedAt = new Date().toISOString();
+    });
+
+    respond(res, 200, {
+      ok: true,
+      agent: params.name,
+      operation: 'rebuild',
+      jobId: job.id,
+      logsUrl: `/agents/${params.name}/rebuild/${job.id}`,
+    });
+  });
+
+  route('GET', '/agents/:name/rebuild/:jobId', async (req, res, { caller, params }) => {
+    const perm = checkPermission(config, caller.callerId, params.name, 'rebuild');
+    if (!perm.allowed) return respond(res, perm.statusCode, { ok: false, error: perm.reason });
+
+    const job = getJob(params.jobId);
+    if (!job) return respond(res, 404, { ok: false, error: `Job not found: ${params.jobId}` });
+
+    sseHeaders(res);
+    // Send all existing output
+    for (const line of job.output) {
+      sseData(res, { source: 'stdout', line });
+    }
+
+    if (job.status !== 'running') {
+      sseEnd(res, { status: job.status, exitCode: job.exitCode });
+      return;
+    }
+
+    // Poll for new output until job completes
+    const startIdx = job.output.length;
+    const interval = setInterval(() => {
+      for (let i = startIdx; i < job.output.length; i++) {
+        sseData(res, { source: 'stdout', line: job.output[i] });
+      }
+      if (job.status !== 'running') {
+        clearInterval(interval);
+        sseEnd(res, { status: job.status, exitCode: job.exitCode });
+      }
+    }, 500);
+
+    res.on('close', () => clearInterval(interval));
   });
 
   // --- Request handler ---
