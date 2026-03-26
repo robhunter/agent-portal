@@ -23,7 +23,7 @@ function makeTestConfig() {
         controllable: true,
         deployment: 'sandcat',
         permissions: {
-          agentbox: new Set(['status', 'restart', 'logs']),
+          agentbox: new Set(['status', 'restart', 'stop', 'start', 'logs', 'exec', 'cycle']),
         },
       },
       'locked-agent': {
@@ -49,7 +49,7 @@ function signHeaders(method, url) {
   return headers;
 }
 
-function request(server, method, path, signedHeaders) {
+function request(server, method, path, signedHeaders, jsonBody) {
   return new Promise((resolve, reject) => {
     const addr = server.address();
     const url = `http://127.0.0.1:${addr.port}${path}`;
@@ -58,6 +58,10 @@ function request(server, method, path, signedHeaders) {
     let headers = signedHeaders;
     if (signedHeaders === 'sign') {
       headers = signHeaders(method, url);
+    }
+
+    if (jsonBody) {
+      headers = { ...headers, 'content-type': 'application/json' };
     }
 
     const opts = {
@@ -80,6 +84,9 @@ function request(server, method, path, signedHeaders) {
       });
     });
     req.on('error', reject);
+    if (jsonBody) {
+      req.write(JSON.stringify(jsonBody));
+    }
     req.end();
   });
 }
@@ -152,5 +159,48 @@ describe('routes', () => {
     assert.equal(res.body.ok, true);
     assert.equal(res.body.agent, 'test-agent');
     assert.ok('status' in res.body);
+  });
+
+  // --- Lifecycle routes ---
+
+  it('returns 403 for restart on non-controllable agent', async () => {
+    const res = await request(server, 'POST', '/agents/locked-agent/restart', 'sign');
+    assert.equal(res.status, 403);
+  });
+
+  it('returns 404 for restart on unknown agent', async () => {
+    const res = await request(server, 'POST', '/agents/nonexistent/restart', 'sign');
+    assert.equal(res.status, 404);
+  });
+
+  // --- Exec route ---
+
+  it('returns 400 for exec with missing cmd', async () => {
+    const res = await request(server, 'POST', '/agents/test-agent/exec', 'sign', {});
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /cmd/);
+  });
+
+  it('returns 400 for exec with non-array cmd', async () => {
+    const res = await request(server, 'POST', '/agents/test-agent/exec', 'sign', { cmd: 'echo hello' });
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /array/);
+  });
+
+  it('returns 400 for exec with empty cmd array', async () => {
+    const res = await request(server, 'POST', '/agents/test-agent/exec', 'sign', { cmd: [] });
+    assert.equal(res.status, 400);
+  });
+
+  it('returns 403 for exec on non-controllable agent', async () => {
+    const res = await request(server, 'POST', '/agents/locked-agent/exec', 'sign', { cmd: ['echo', 'hi'] });
+    assert.equal(res.status, 403);
+  });
+
+  // --- Cycle route ---
+
+  it('returns 403 for cycle on non-controllable agent', async () => {
+    const res = await request(server, 'POST', '/agents/locked-agent/cycle', 'sign');
+    assert.equal(res.status, 403);
   });
 });
