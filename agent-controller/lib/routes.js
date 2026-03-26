@@ -1,6 +1,6 @@
 const { verifyCaller, AuthError } = require('./auth');
 const { checkPermission, listVisibleAgents } = require('./permissions');
-const { getStatus, streamLogsArgs } = require('./docker');
+const { getStatus, streamLogsArgs, lifecycleCommand, execArgs, cycleArgs } = require('./docker');
 const { streamProcess } = require('./stream');
 const { getAgent } = require('./config');
 const url = require('url');
@@ -53,6 +53,46 @@ function createRouter(config) {
     streamProcess(res, 'docker', args);
   });
 
+  // --- Lifecycle routes (restart, stop, start) ---
+
+  for (const op of ['restart', 'stop', 'start']) {
+    route('POST', `/agents/:name/${op}`, async (req, res, { caller, params }) => {
+      const perm = checkPermission(config, caller.callerId, params.name, op);
+      if (!perm.allowed) return respond(res, perm.statusCode, { ok: false, error: perm.reason });
+
+      const agent = getAgent(config, params.name);
+      const result = await lifecycleCommand(agent, op);
+      respond(res, result.ok ? 200 : 500, { ...result, agent: params.name, operation: op });
+    });
+  }
+
+  // --- Exec route ---
+
+  route('POST', '/agents/:name/exec', async (req, res, { caller, params }) => {
+    const perm = checkPermission(config, caller.callerId, params.name, 'exec');
+    if (!perm.allowed) return respond(res, perm.statusCode, { ok: false, error: perm.reason });
+
+    const body = await readBody(req);
+    if (!body.cmd || !Array.isArray(body.cmd) || body.cmd.length === 0) {
+      return respond(res, 400, { ok: false, error: 'Request body must include cmd as a non-empty array' });
+    }
+
+    const agent = getAgent(config, params.name);
+    const args = execArgs(agent, body.cmd);
+    streamProcess(res, 'docker', args);
+  });
+
+  // --- Cycle route ---
+
+  route('POST', '/agents/:name/cycle', async (req, res, { caller, params }) => {
+    const perm = checkPermission(config, caller.callerId, params.name, 'cycle');
+    if (!perm.allowed) return respond(res, perm.statusCode, { ok: false, error: perm.reason });
+
+    const agent = getAgent(config, params.name);
+    const args = cycleArgs(agent);
+    streamProcess(res, 'docker', args);
+  });
+
   // --- Request handler ---
 
   async function handleRequest(req, res) {
@@ -83,6 +123,21 @@ function respond(res, statusCode, body) {
   if (res.writableEnded) return;
   res.writeHead(statusCode);
   res.end(JSON.stringify(body));
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch {
+        reject(new Error('Invalid JSON body'));
+      }
+    });
+    req.on('error', reject);
+  });
 }
 
 module.exports = { createRouter };

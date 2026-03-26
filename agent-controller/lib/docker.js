@@ -51,4 +51,32 @@ function streamLogsArgs(agent, service, tail) {
   return args;
 }
 
-module.exports = { getStatus, composeFile, composeArgs, streamLogsArgs };
+function lifecycleCommand(agent, operation) {
+  return new Promise((resolve, reject) => {
+    const ops = {
+      restart: ['restart', 'agent'],
+      stop: ['down'],
+      start: ['up', '-d'],
+    };
+    const opArgs = ops[operation];
+    if (!opArgs) return reject(new Error(`Unknown lifecycle operation: ${operation}`));
+
+    const args = ['compose', ...composeArgs(agent.name, agent.deployment), ...opArgs];
+    execFile('docker', args, { encoding: 'utf8', timeout: 60000 }, (err, stdout, stderr) => {
+      if (err) {
+        return resolve({ ok: false, error: stderr.trim() || err.message });
+      }
+      resolve({ ok: true, output: (stdout + stderr).trim() });
+    });
+  });
+}
+
+function execArgs(agent, cmd) {
+  return ['compose', ...composeArgs(agent.name, agent.deployment), 'exec', '-T', 'agent', ...cmd];
+}
+
+function cycleArgs(agent) {
+  return execArgs(agent, ['bash', 'scripts/wake.sh']);
+}
+
+module.exports = { getStatus, composeFile, composeArgs, streamLogsArgs, lifecycleCommand, execArgs, cycleArgs };
