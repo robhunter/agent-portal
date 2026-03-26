@@ -19,10 +19,10 @@ function checkPermission(config, callerId, agentName, operation) {
     return { allowed: false, reason: `Agent '${agentName}' is not controllable`, statusCode: 403 };
   }
 
-  const callerPerms = agent.permissions[callerId];
-  if (!callerPerms) {
+  if (!Object.prototype.hasOwnProperty.call(agent.permissions, callerId)) {
     return { allowed: false, reason: `Caller '${callerId}' has no permissions on agent '${agentName}'`, statusCode: 403 };
   }
+  const callerPerms = agent.permissions[callerId];
 
   if (!callerPerms.has(operation)) {
     return { allowed: false, reason: `Caller '${callerId}' cannot '${operation}' agent '${agentName}'`, statusCode: 403 };
@@ -35,6 +35,7 @@ function listVisibleAgents(config, callerId) {
   const visible = [];
   for (const [name, agent] of Object.entries(config.agents)) {
     if (!agent.controllable) continue;
+    if (!Object.prototype.hasOwnProperty.call(agent.permissions, callerId)) continue;
     const callerPerms = agent.permissions[callerId];
     if (!callerPerms || callerPerms.size === 0) continue;
     visible.push({
