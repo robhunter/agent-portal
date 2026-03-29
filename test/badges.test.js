@@ -126,6 +126,25 @@ describe('GET /api/badges', () => {
     assert.equal(data.requests, 1);
     assert.equal(data.todos, 1);
   });
+
+  it('filters outputs by project slug when ?project= is provided', async () => {
+    fs.writeFileSync(path.join(tmpDir, 'output', 'proj-a-report1.md'), '# A1');
+    fs.writeFileSync(path.join(tmpDir, 'output', 'proj-a-report2.md'), '# A2');
+    fs.writeFileSync(path.join(tmpDir, 'output', 'proj-b-report1.md'), '# B1');
+    fs.writeFileSync(path.join(tmpDir, 'output', 'orphan.md'), '# Orphan');
+
+    // All unreviewed globally
+    const all = await fetchJSON(port, '/api/badges');
+    assert.equal(all.outputs, 4);
+
+    // Filter to proj-a
+    const projA = await fetchJSON(port, '/api/badges?project=proj-a');
+    assert.equal(projA.outputs, 2);
+
+    // Filter to proj-b
+    const projB = await fetchJSON(port, '/api/badges?project=proj-b');
+    assert.equal(projB.outputs, 1);
+  });
 });
 
 describe('GET /api/badges — disabled features', () => {
