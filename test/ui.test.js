@@ -371,4 +371,24 @@ describe('buildHTML', () => {
     assert.ok(!html.includes('function loadTodos'));
     assert.ok(!html.includes('function addTodo'));
   });
+
+  it('includes performance tracking and stats overlay', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(html.includes('_perfStats'), 'should have _perfStats object');
+    assert.ok(html.includes('function showStats'), 'should have showStats function');
+    assert.ok(html.includes('initialLoad'), 'should track initial load time');
+    assert.ok(html.includes('Stats</a>'), 'sidebar footer should have Stats link');
+  });
+
+  it('includes stats overlay CSS', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(html.includes('#stats-overlay'), 'should have stats overlay styles');
+    assert.ok(html.includes('.stats-panel'), 'should have stats panel styles');
+  });
+
+  it('wraps init to capture initial load latency', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(html.includes('init().then'), 'should wrap init() with .then for timing');
+    assert.ok(html.includes('_perfStats.initialLoad'), 'should set initialLoad in init callback');
+  });
 });
