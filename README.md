@@ -175,10 +175,26 @@ agentDir/
 └── projects/          # Project .md files (if sidebar.type is "projects")
 ```
 
-## Development
+## Commands
+
+### Run tests
 
 ```bash
 node --test test/*.test.js
 ```
 
-171 tests, zero external dependencies.
+### Start the agent-controller
+
+The agent-controller is an HTTP supervisor service that manages agent Docker containers (exec commands, restart, stream logs, trigger cycles). It listens on port 9090 by default.
+
+```bash
+cd agent-controller && npm start
+```
+
+Or with a custom config path:
+
+```bash
+node agent-controller/index.js /path/to/agent-controller.yaml
+```
+
+See [`agent-controller/agent-controller.yaml`](agent-controller/agent-controller.yaml) for configuration (listen address, agent permissions, auth credentials).
