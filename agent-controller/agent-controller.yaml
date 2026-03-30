@@ -1,0 +1,45 @@
+# Agent Controller configuration
+#
+# Copy this file to agent-controller.yaml and edit for your setup.
+
+listen: 0.0.0.0:9090
+
+# Where agent directories live on the host
+agents_root: /Users/robhunter/code/agents
+
+# Where the framework lives on the host
+framework_dir: /Users/robhunter/code/agents/agent-portal
+
+# VestAuth caller identities
+# Each caller needs a vestauth keypair (run: vestauth agent init)
+# Register the UID and public JWK here.
+auth:
+  callers:
+    agentbox:
+      uid: "agent-5756aa30326fd115c21fa46b"
+      public_jwk: '{"crv":"Ed25519","x":"if7UOd_tqoBu4BL20Cz_zQptbjnYu5mH4o_Zo7NS94U","kty":"OKP","kid":"Zzu24YjuMOmNwxCXNLpb7rnNXYfu8cMbvZgEot5qcSE"}'
+    agent-coder:
+      uid: "agent-4a5f1d20a7b6d60bdd572417"
+      public_jwk: ''  # TODO: extract from agent-coder container: cat /root/.vestauth/identity.json
+
+# Agent stacks managed by this controller
+agents:
+  dev-agent:
+    dir: dev-agent
+    controllable: true
+    deployment: sandcat
+    permissions:
+      agentbox: [rebuild, restart, stop, start, logs, status, exec, cycle]
+      agent-coder: [rebuild, restart, stop, start, logs, status, exec, cycle]
+
+  bobbo:
+    dir: bobbo-agent
+    controllable: false
+
+  agent-coder:
+    dir: agent-coder
+    controllable: false
+
+  agent-pm:
+    dir: agent-pm
+    controllable: false
