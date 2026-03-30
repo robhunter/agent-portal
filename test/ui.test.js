@@ -391,4 +391,23 @@ describe('buildHTML', () => {
     assert.ok(html.includes('init().then'), 'should wrap init() with .then for timing');
     assert.ok(html.includes('_perfStats.initialLoad'), 'should set initialLoad in init callback');
   });
+
+  it('generates syntactically valid JavaScript for simple sidebar', () => {
+    const html = buildHTML(baseConfig);
+    const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+    assert.ok(scriptMatch, 'should contain a script tag');
+    assert.doesNotThrow(() => new Function(scriptMatch[1]), 'embedded JS must be syntactically valid');
+  });
+
+  it('generates syntactically valid JavaScript for projects sidebar', () => {
+    const config = {
+      ...baseConfig,
+      sidebar: { type: 'projects', runningLog: true },
+      features: { github: { repos: ['org/repo'] }, tabs: ['journal', 'github', 'project', 'status', 'outputs', 'requests', 'todos'] },
+    };
+    const html = buildHTML(config);
+    const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+    assert.ok(scriptMatch, 'should contain a script tag');
+    assert.doesNotThrow(() => new Function(scriptMatch[1]), 'embedded JS must be syntactically valid');
+  });
 });
