@@ -160,6 +160,8 @@ services:
   agent:
     image: ubuntu:24.04
     network_mode: "service:wg-client"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - $AGENT_DIR:$CONTAINER_AGENT_DIR
       - $FRAMEWORK_DIR:$CONTAINER_FRAMEWORK_DIR
