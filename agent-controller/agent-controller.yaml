@@ -20,7 +20,7 @@ auth:
       public_jwk: '{"crv":"Ed25519","x":"if7UOd_tqoBu4BL20Cz_zQptbjnYu5mH4o_Zo7NS94U","kty":"OKP","kid":"Zzu24YjuMOmNwxCXNLpb7rnNXYfu8cMbvZgEot5qcSE"}'
     agent-coder:
       uid: "agent-4a5f1d20a7b6d60bdd572417"
-      public_jwk: ''  # TODO: extract from agent-coder container: cat /root/.vestauth/identity.json
+      public_jwk: '{"crv":"Ed25519","x":"j5raXC5UlOSVT2xGG15HCjaYCzYCIlTf1t2DEDz7cgM","kty":"OKP"}'
 
 # Agent stacks managed by this controller
 agents:
