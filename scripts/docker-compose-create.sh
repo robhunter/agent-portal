@@ -145,6 +145,8 @@ services:
       - NET_ADMIN
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: sleep infinity
     depends_on:
       mitmproxy:
@@ -160,8 +162,6 @@ services:
   agent:
     image: ubuntu:24.04
     network_mode: "service:wg-client"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - $AGENT_DIR:$CONTAINER_AGENT_DIR
       - $FRAMEWORK_DIR:$CONTAINER_FRAMEWORK_DIR
