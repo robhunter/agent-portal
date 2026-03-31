@@ -78,5 +78,11 @@ unset _f
 BASHRC_EOF
 fi
 
+# ── Symlink vestauth identity if present ──────────────────────────────────
+if [ -d "${AGENT_DIR}/.vestauth" ] && [ ! -e /root/.vestauth ]; then
+    ln -sfn "${AGENT_DIR}/.vestauth" /root/.vestauth
+    echo "Linked vestauth identity from ${AGENT_DIR}/.vestauth"
+fi
+
 # ── Delegate to the agent's existing start.sh ────────────────────────────
 exec bash "${AGENT_DIR}/scripts/start.sh"
