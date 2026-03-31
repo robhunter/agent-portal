@@ -18,6 +18,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "vestauth": "^0.1.32"
   }
 }
