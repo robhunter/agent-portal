@@ -227,6 +227,17 @@ fi
 bash "$FRAMEWORK_DIR/scripts/run-hooks.sh" "$FRAMEWORK_DIR" "$AGENT_DIR" pre-cycle
 step "pre-cycle hooks done"
 
+# ── CLAUDE AUTH CHECK ──
+
+# Record auth confirmation timestamp (non-fatal)
+AUTH_CONFIRMED_FILE="$AGENT_DIR/logs/.auth-last-confirmed"
+if claude auth status --json 2>/dev/null | grep -q '"loggedIn": *true'; then
+  date -Iseconds > "$AUTH_CONFIRMED_FILE" 2>/dev/null || true
+  step "claude auth confirmed"
+else
+  step "claude auth NOT confirmed"
+fi
+
 # ── CLAUDE INVOCATION ──
 
 # Close lock fd before piping to Claude to prevent fd leak into child processes
