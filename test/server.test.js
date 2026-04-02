@@ -145,6 +145,150 @@ describe('createServer', () => {
   });
 });
 
+// --- Tailscale auth middleware ---
+
+describe('Tailscale auth middleware', () => {
+  it('allows requests when auth is not configured', async () => {
+    const routes = {
+      'GET /api/test': (req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      }
+    };
+    const config = { name: 'Test', port: 0 };
+    const srv = createServer(config, { routes, getHTML: () => '<html></html>' });
+    await new Promise(resolve => srv.listen(0, resolve));
+    const port = srv.address().port;
+
+    const res = await fetch(`http://localhost:${port}/api/test`);
+    assert.equal(res.status, 200);
+    srv.close();
+  });
+
+  it('allows requests when allowedUsers is empty array', async () => {
+    const routes = {
+      'GET /api/test': (req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      }
+    };
+    const config = { name: 'Test', port: 0, auth: { allowedUsers: [] } };
+    const srv = createServer(config, { routes, getHTML: () => '<html></html>' });
+    await new Promise(resolve => srv.listen(0, resolve));
+    const port = srv.address().port;
+
+    const res = await fetch(`http://localhost:${port}/api/test`);
+    assert.equal(res.status, 200);
+    srv.close();
+  });
+
+  it('returns 401 when auth is configured but no identity header', async () => {
+    const routes = {
+      'GET /api/test': (req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      }
+    };
+    const config = { name: 'Test', port: 0, auth: { allowedUsers: ['rob@github'] } };
+    const srv = createServer(config, { routes, getHTML: () => '<html></html>' });
+    await new Promise(resolve => srv.listen(0, resolve));
+    const port = srv.address().port;
+
+    const res = await fetch(`http://localhost:${port}/api/test`);
+    assert.equal(res.status, 401);
+    const data = await res.json();
+    assert.ok(data.error.includes('Unauthorized'));
+    srv.close();
+  });
+
+  it('returns 403 when user is not in allowedUsers', async () => {
+    const routes = {
+      'GET /api/test': (req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      }
+    };
+    const config = { name: 'Test', port: 0, auth: { allowedUsers: ['rob@github'] } };
+    const srv = createServer(config, { routes, getHTML: () => '<html></html>' });
+    await new Promise(resolve => srv.listen(0, resolve));
+    const port = srv.address().port;
+
+    const res = await fetch(`http://localhost:${port}/api/test`, {
+      headers: { 'Tailscale-User-Login': 'evil@github' }
+    });
+    assert.equal(res.status, 403);
+    srv.close();
+  });
+
+  it('allows requests from users in allowedUsers', async () => {
+    const routes = {
+      'GET /api/test': (req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ user: req.tailscaleUser }));
+      }
+    };
+    const config = { name: 'Test', port: 0, auth: { allowedUsers: ['rob@github'] } };
+    const srv = createServer(config, { routes, getHTML: () => '<html></html>' });
+    await new Promise(resolve => srv.listen(0, resolve));
+    const port = srv.address().port;
+
+    const res = await fetch(`http://localhost:${port}/api/test`, {
+      headers: {
+        'Tailscale-User-Login': 'rob@github',
+        'Tailscale-User-Name': 'Rob Hunter'
+      }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.user.login, 'rob@github');
+    assert.equal(data.user.name, 'Rob Hunter');
+    srv.close();
+  });
+
+  it('exempts /api/health from auth', async () => {
+    const routes = {
+      'GET /api/health': (req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok' }));
+      }
+    };
+    const config = { name: 'Test', port: 0, auth: { allowedUsers: ['rob@github'] } };
+    const srv = createServer(config, { routes, getHTML: () => '<html></html>' });
+    await new Promise(resolve => srv.listen(0, resolve));
+    const port = srv.address().port;
+
+    const res = await fetch(`http://localhost:${port}/api/health`);
+    assert.equal(res.status, 200);
+    srv.close();
+  });
+
+  it('blocks non-API routes (SPA) when auth is configured and no identity', async () => {
+    const config = { name: 'Test', port: 0, auth: { allowedUsers: ['rob@github'] } };
+    const srv = createServer(config, { routes: {}, getHTML: () => '<html></html>' });
+    await new Promise(resolve => srv.listen(0, resolve));
+    const port = srv.address().port;
+
+    const res = await fetch(`http://localhost:${port}/`);
+    assert.equal(res.status, 401);
+    srv.close();
+  });
+
+  it('allows SPA routes with valid identity', async () => {
+    const config = { name: 'Test', port: 0, auth: { allowedUsers: ['rob@github'] } };
+    const srv = createServer(config, { routes: {}, getHTML: () => '<html>portal</html>' });
+    await new Promise(resolve => srv.listen(0, resolve));
+    const port = srv.address().port;
+
+    const res = await fetch(`http://localhost:${port}/`, {
+      headers: { 'Tailscale-User-Login': 'rob@github' }
+    });
+    assert.equal(res.status, 200);
+    const body = await res.text();
+    assert.ok(body.includes('portal'));
+    srv.close();
+  });
+});
+
 // --- setupPidFile ---
 
 describe('setupPidFile', () => {

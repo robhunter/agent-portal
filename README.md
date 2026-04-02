@@ -138,6 +138,30 @@ The `features` object controls which tabs and routes are enabled. Omit a key to 
 | `deploy` | `true` | Enable deploy signal route (writes signal file for supervisor) |
 | `serviceRestart` | `string[]` | Allowlist of service names that can be restarted via API |
 
+### Authentication
+
+The optional `auth` object enables Tailscale identity-based authentication. When configured, only requests with a valid `Tailscale-User-Login` header from an allowlisted user are permitted. The `/api/health` endpoint is always exempt.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `allowedUsers` | `string[]` | List of Tailscale login identities (e.g., `["robhunter@github"]`). When empty or omitted, auth is disabled (local dev mode). |
+
+**Example config:**
+
+```json
+{
+  "auth": {
+    "allowedUsers": ["robhunter@github"]
+  }
+}
+```
+
+**How it works:**
+1. Set up [Tailscale Serve](https://tailscale.com/kb/1312/serve) to proxy to the portal port
+2. Tailscale injects `Tailscale-User-Login` and `Tailscale-User-Name` headers automatically
+3. The portal checks the login against `allowedUsers`
+4. Unauthorized requests get 401 (no identity) or 403 (not in allowlist)
+
 ### Sidebar
 
 The `sidebar` object controls the sidebar layout.
