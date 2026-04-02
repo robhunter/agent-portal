@@ -197,7 +197,7 @@ describe('web portal — config injection', () => {
     const configMatch = html.match(/const PORTAL_CONFIG = ({[^;]+})/);
     assert.ok(configMatch, 'PORTAL_CONFIG should be present in HTML');
     const portalConfig = JSON.parse(configMatch[1]);
-    assert.deepEqual(portalConfig.tabs, ['journal', 'github', 'status']);
+    assert.deepEqual(portalConfig.tabs, ['journal', 'github', 'status', 'capabilities']);
     assert.equal(portalConfig.name, 'TestAgent');
     assert.equal(portalConfig.hasGitHub, true);
     assert.deepEqual(portalConfig.githubRepos, ['org/repo']);
@@ -232,5 +232,6 @@ describe('web portal — config injection', () => {
     assert.ok(html.includes('github: loadGitHub'), 'TAB_LOADERS should map github');
     assert.ok(html.includes('outputs: loadOutputs'), 'TAB_LOADERS should map outputs');
     assert.ok(html.includes('todos: loadTodos'), 'TAB_LOADERS should map todos');
+    assert.ok(html.includes('capabilities: loadCapabilities'), 'TAB_LOADERS should map capabilities (default-on)');
   });
 });
