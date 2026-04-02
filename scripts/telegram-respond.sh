@@ -84,7 +84,6 @@ fi
 run_claude() {
   echo "$FULL_PROMPT" | claude --print \
     "$@" \
-    --allowedTools "Edit" "Write" "Read" "Bash(grep:*)" "Bash(jq:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(wc:*)" "Bash(date:*)" "Bash(git:*)" \
     2>>logs/respond_errors.log
 }
 
