@@ -405,16 +405,22 @@ describe('POST /api/cron/toggle', () => {
 
 describe('POST /api/cycle/run', () => {
   let server, port;
+  const lockFile = '/tmp/test-portal-lock-nonexistent-cycle';
 
   before(async () => {
     // Use a lock file that won't exist (so lock check says "not running")
-    const result = createTestServer({ lockFile: '/tmp/test-portal-lock-nonexistent-cycle' });
+    // Clean up stale markers from previous runs
+    try { fs.unlinkSync(lockFile + '.starting'); } catch {}
+    const result = createTestServer({ lockFile });
     server = result.server;
     await new Promise(resolve => server.listen(0, resolve));
     port = server.address().port;
   });
 
-  after(() => server.close());
+  after(() => {
+    server.close();
+    try { fs.unlinkSync(lockFile + '.starting'); } catch {}
+  });
 
   it('returns 200 when no cycle is running (wake.sh may not exist but spawn succeeds)', async () => {
     const { status, data } = await fetchJSON(port, '/api/cycle/run', {
@@ -428,15 +434,21 @@ describe('POST /api/cycle/run', () => {
 
 describe('POST /api/cycle/respond', () => {
   let server, port;
+  const lockFile = '/tmp/test-portal-lock-nonexistent-respond';
 
   before(async () => {
-    const result = createTestServer({ lockFile: '/tmp/test-portal-lock-nonexistent-respond' });
+    // Clean up stale markers from previous runs
+    try { fs.unlinkSync(lockFile + '.starting'); } catch {}
+    const result = createTestServer({ lockFile });
     server = result.server;
     await new Promise(resolve => server.listen(0, resolve));
     port = server.address().port;
   });
 
-  after(() => server.close());
+  after(() => {
+    server.close();
+    try { fs.unlinkSync(lockFile + '.starting'); } catch {}
+  });
 
   it('returns 200 when no cycle is running (respond.sh resolved from framework)', async () => {
     const { status, data } = await fetchJSON(port, '/api/cycle/respond', {
