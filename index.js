@@ -63,6 +63,7 @@ require('./lib/routes/uploads').register(routes, config);
 require('./lib/routes/todos').register(routes, config);
 require('./lib/routes/badges').register(routes, config);
 require('./lib/routes/capabilities').register(routes, config);
+require('./lib/routes/tts').register(routes, config);
 
 // Build HTML page (cached — config doesn't change at runtime)
 let cachedHTML;
