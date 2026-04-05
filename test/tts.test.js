@@ -178,4 +178,31 @@ describe('TTS button in UI', () => {
     assert.ok(js.includes('listen-btn'));
     assert.ok(js.includes('PORTAL_CONFIG.hasTTS'));
   });
+
+  it('includes audio player controls (scrub bar, skip, speed)', () => {
+    const { getOutputsTabJS } = require('../lib/ui/tabs/outputs');
+    const js = getOutputsTabJS();
+    assert.ok(js.includes('tts-player'), 'player container');
+    assert.ok(js.includes('tts-scrub'), 'scrub bar');
+    assert.ok(js.includes('tts-playpause'), 'play/pause button');
+    assert.ok(js.includes('ttsSkip(-10)'), 'skip back 10s');
+    assert.ok(js.includes('ttsSkip(10)'), 'skip forward 10s');
+    assert.ok(js.includes('tts-speed'), 'speed dropdown');
+    assert.ok(js.includes('ttsSetSpeed'), 'speed setter');
+  });
+
+  it('includes all playback speed options', () => {
+    const { getOutputsTabJS } = require('../lib/ui/tabs/outputs');
+    const js = getOutputsTabJS();
+    for (const speed of ['1', '1.1', '1.2', '1.3', '1.5', '1.75', '2']) {
+      assert.ok(js.includes('value="' + speed + '"'), 'speed option ' + speed);
+    }
+  });
+
+  it('persists playback speed to localStorage', () => {
+    const { getOutputsTabJS } = require('../lib/ui/tabs/outputs');
+    const js = getOutputsTabJS();
+    assert.ok(js.includes("localStorage.getItem('ttsPlaybackRate')"), 'reads from localStorage');
+    assert.ok(js.includes("localStorage.setItem('ttsPlaybackRate'"), 'writes to localStorage');
+  });
 });
