@@ -46,6 +46,7 @@ _yaml_value() {
 
 AGENT_NAME=$(_yaml_value name)
 AGENT_PORT=$(_yaml_value port)
+AGENT_TIMEZONE=$(_yaml_value timezone)
 
 if [ -z "$AGENT_NAME" ] || [ -z "$AGENT_PORT" ]; then
     echo "ERROR: Could not read 'name' or 'port' from $AGENT_DIR/agent.yaml" >&2
@@ -61,10 +62,27 @@ fi
 CONTAINER_AGENT_DIR="/root/$AGENT_NAME"
 CONTAINER_FRAMEWORK_DIR="/root/workspaces/agent-portal"
 
+# ── Resolve timezone ─────────────────────────────────────────────────────
+# Use agent.yaml timezone if set, otherwise detect from host.
+if [ -z "$AGENT_TIMEZONE" ]; then
+    # Try readlink (works on macOS and most Linux)
+    AGENT_TIMEZONE=$(readlink /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||')
+    # Fallback: /etc/timezone (Debian/Ubuntu hosts)
+    if [ -z "$AGENT_TIMEZONE" ]; then
+        AGENT_TIMEZONE=$(cat /etc/timezone 2>/dev/null || echo "")
+    fi
+    # Last resort
+    if [ -z "$AGENT_TIMEZONE" ]; then
+        AGENT_TIMEZONE="UTC"
+        echo "Warning: Could not detect host timezone, defaulting to UTC" >&2
+    fi
+fi
+
 echo "=== Sandcat Stack: $AGENT_NAME ==="
 echo "  Agent directory:     $AGENT_DIR"
 echo "  Framework directory: $FRAMEWORK_DIR"
 echo "  Agent port:          $AGENT_PORT"
+echo "  Timezone:            $AGENT_TIMEZONE"
 
 # ── Validate settings.json ────────────────────────────────────────────────
 SETTINGS_DIR="$HOME/sandcat-secrets/$AGENT_NAME"
@@ -169,6 +187,7 @@ services:
       - sandcat-certs:/sandcat-certs:ro
     entrypoint: ["bash", "$CONTAINER_FRAMEWORK_DIR/sandcat/scripts/app-init.sh", "$CONTAINER_AGENT_DIR"]
     environment:
+      - TZ=$AGENT_TIMEZONE
       - CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
       - NODE_EXTRA_CA_CERTS=/sandcat-certs/mitmproxy-ca-cert.pem
     restart: unless-stopped
@@ -243,6 +262,11 @@ $COMPOSE exec -T agent bash -c \
     "DEBIAN_FRONTEND=noninteractive apt-get update -qq && \
      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq git cron ca-certificates > /dev/null 2>&1 && \
      update-ca-certificates 2>/dev/null"
+
+echo "Setting container timezone to $AGENT_TIMEZONE..."
+$COMPOSE exec -T agent bash -c \
+    "ln -sf /usr/share/zoneinfo/$AGENT_TIMEZONE /etc/localtime && \
+     echo $AGENT_TIMEZONE > /etc/timezone"
 
 echo "Running vm-setup.sh..."
 $COMPOSE exec -T agent bash -c \
