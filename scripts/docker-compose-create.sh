@@ -183,6 +183,18 @@ COMPOSEOF
 
 echo "  Compose file:        $STACK_DIR/docker-compose.yml"
 
+# ── Tailscale serve management ───────────────────────────────────────────
+# If tailscale is installed, manage HTTPS serve for the agent's portal port.
+# Disable before teardown (port conflict), re-enable after stack is healthy.
+# Fails silently if tailscale is not installed or not configured.
+HAS_TAILSCALE=false
+if command -v tailscale >/dev/null 2>&1; then
+    HAS_TAILSCALE=true
+    echo ""
+    echo "Disabling Tailscale serve on port $AGENT_PORT..."
+    sudo tailscale serve --https="$AGENT_PORT" off 2>/dev/null || true
+fi
+
 # ── Stop existing containers ──────────────────────────────────────────────
 # Stop any existing single-container setup (pre-Sandcat)
 if docker ps -a --format '{{.Names}}' | grep -q "^${AGENT_NAME}$"; then
@@ -251,6 +263,14 @@ echo "Restarting agent service for clean boot..."
 $COMPOSE restart agent
 
 sleep 3
+
+# ── Re-enable Tailscale serve ────────────────────────────────────────────
+if [ "$HAS_TAILSCALE" = true ]; then
+    echo "Re-enabling Tailscale serve on port $AGENT_PORT..."
+    sudo tailscale serve --bg --https="$AGENT_PORT" "http://localhost:$AGENT_PORT" 2>/dev/null || {
+        echo "Warning: Failed to re-enable Tailscale serve (continuing)" >&2
+    }
+fi
 
 # ── Done ──────────────────────────────────────────────────────────────────
 echo ""
