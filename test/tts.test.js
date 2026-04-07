@@ -75,8 +75,10 @@ function createTestServer(envOverrides = {}) {
   const routes = {};
   require('../lib/routes/outputs').register(routes, config);
 
-  // Temporarily set env var for TTS registration
+  // Temporarily set env vars for TTS registration
   const origKey = process.env.GOOGLE_TTS_API_KEY;
+  // Clear the key first so "no key" tests work even when env has a real key
+  delete process.env.GOOGLE_TTS_API_KEY;
   for (const [k, v] of Object.entries(envOverrides)) {
     process.env[k] = v;
   }
