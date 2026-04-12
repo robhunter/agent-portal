@@ -90,6 +90,18 @@ describe('web portal — tab JS content integrity', () => {
     assert.ok(html.includes('/api/todos'), 'Todos tab should fetch /api/todos');
   });
 
+  it('todos notes render in reverse chronological order with infinite scroll', () => {
+    const config = {
+      name: 'TestAgent',
+      authors: {},
+      features: { tabs: ['journal', 'todos', 'status'] },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('.slice().reverse()'), 'Notes should be reversed for newest-first');
+    assert.ok(html.includes('notes-load-sentinel'), 'Should have infinite scroll sentinel');
+    assert.ok(html.includes('IntersectionObserver'), 'Should use IntersectionObserver for lazy loading');
+  });
+
   it('outputs tab JS references correct API endpoints', () => {
     const config = {
       name: 'TestAgent',
