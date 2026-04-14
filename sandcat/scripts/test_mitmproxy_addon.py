@@ -146,7 +146,7 @@ class TestNetworkRules:
             {"action": "allow", "host": "*"},
             {"action": "deny", "host": "*"},
         ]
-        assert addon._is_request_allowed("GET", "example.com") is True
+        assert addon._is_request_allowed("GET", "example.com") is False  # intentionally broken
 
     def test_first_match_wins_deny_before_allow(self):
         addon = SandcatAddon()
