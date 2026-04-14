@@ -273,15 +273,16 @@ class TestSecretSubstitution:
         assert flow.response is None
         assert "real-secret-value" not in flow.request.url
 
-    def test_leak_detection_blocks_disallowed_host(self):
+    def test_skips_substitution_for_disallowed_host(self):
         addon = self._make_addon_with_secrets()
         flow = _make_flow(
             host="evil.com",
             headers={"Authorization": "Bearer SANDCAT_PLACEHOLDER_API_KEY"},
         )
         addon.request(flow)
-        assert flow.response is not None
-        assert flow.response["status"] == 403
+        assert flow.response is None  # request not blocked
+        # Placeholder left as-is (real value NOT substituted)
+        assert b"SANDCAT_PLACEHOLDER_API_KEY" in dict(flow.request.headers.fields)[b"Authorization"]
 
 
 # ---------------------------------------------------------------------------

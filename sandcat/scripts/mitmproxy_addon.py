@@ -164,17 +164,14 @@ class SandcatAddon:
             if not present:
                 continue
 
-            # Leak detection: block if secret going to disallowed host
+            # Skip substitution if secret is not allowed for this host.
+            # The placeholder (not the real value) stays in the request,
+            # which is harmless — e.g. it may appear in LLM prompt context.
             if not any(fnmatch(host, pattern) for pattern in allowed_hosts):
-                flow.response = http.Response.make(
-                    403,
-                    f"Blocked: secret {name!r} not allowed for host {host!r}\n".encode(),
-                    {"Content-Type": "text/plain"},
+                ctx.log.debug(
+                    f"Skipping secret {name!r} substitution for host {host!r} (not in allowed hosts)"
                 )
-                ctx.log.warn(
-                    f"Blocked secret {name!r} leak to disallowed host {host!r}"
-                )
-                return
+                continue
 
             value_bytes = value.encode()
 
