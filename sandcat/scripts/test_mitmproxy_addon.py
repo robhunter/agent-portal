@@ -86,6 +86,7 @@ class _Request:
         self.method = method
         self.pretty_host = host
         self.url = url
+        self.path = "/" + url.split("/", 3)[-1] if url.count("/") >= 3 else "/"
         self.headers = _Headers(headers or {})
         self.content = content
 
@@ -264,7 +265,8 @@ class TestSecretSubstitution:
         )
         addon.request(flow)
         assert flow.response is None
-        assert "real-secret-value" in flow.request.url
+        # Addon substitutes in .path (not .url) to avoid mitmproxy host header bug
+        assert "real-secret-value" in flow.request.path
 
     def test_no_op_when_placeholder_absent(self):
         addon = self._make_addon_with_secrets()
