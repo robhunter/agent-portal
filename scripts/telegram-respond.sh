@@ -14,7 +14,13 @@ cd "$AGENT_DIR"
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 
-# Source .env
+# Source sandcat profile scripts if available (Sandcat containers inject
+# env vars via /etc/profile.d/ but cron doesn't inherit them)
+for _f in /etc/profile.d/sandcat-*.sh; do
+  [ -r "$_f" ] && . "$_f"
+done
+
+# Source .env if present (pre-Sandcat containers use .env for secrets)
 if [ -f "$AGENT_DIR/.env" ]; then
   set -a; . "$AGENT_DIR/.env"; set +a
 fi
@@ -37,6 +43,11 @@ RECENT_CONVO=$(tail -20 logs/conversation.jsonl | jq -r '"[\(.role)] \(.text)"')
 
 # Log cycle start
 bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" responsive_cycle "Telegram message received"
+
+# Cycle logging (matching wake.sh pattern)
+CYCLE_TS="$(date +%Y%m%d-%H%M)"
+CYCLE_LOG="logs/cycles/${CYCLE_TS}-respond.log"
+mkdir -p logs/cycles
 
 echo "Running claude..."
 
@@ -83,6 +94,7 @@ fi
 
 run_claude() {
   echo "$FULL_PROMPT" | claude --print \
+    --allowedTools "Bash" "Edit" "Write" "Read" "Glob" "Grep" "WebSearch" "WebFetch" \
     "$@" \
     2>>logs/respond_errors.log
 }
@@ -106,6 +118,9 @@ else
   CLAUDE_EXIT=$?
 fi
 set -e
+
+# Write response to cycle log
+echo "$RESPONSE" > "$CYCLE_LOG"
 
 if [ "$CLAUDE_EXIT" -ne 0 ]; then
   echo "Claude exited with code $CLAUDE_EXIT"
