@@ -256,7 +256,7 @@ while [ "$CLAUDE_EXIT" -ne 0 ] && [ "$RETRY" -lt "$MAX_RETRIES" ]; do
     sleep 30
   fi
 
-  cat "$WAKE_PROMPT_FILE" 200>&- | claude --print \
+  cat "$WAKE_PROMPT_FILE" 200>&- | claude --print --effort max \
     --allowedTools "Bash" "Edit" "Write" "Read" "Glob" "Grep" "WebSearch" "WebFetch" \
     "mcp__playwright__browser_click" "mcp__playwright__browser_close" \
     "mcp__playwright__browser_console_messages" "mcp__playwright__browser_drag" \

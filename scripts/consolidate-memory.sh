@@ -173,7 +173,7 @@ PROMPT_EOF
 # Unset CLAUDECODE to allow running from post-cycle hooks (where the parent
 # Claude session has already exited but the env var may linger)
 echo "Invoking claude -p for consolidation..."
-RESULT=$(unset CLAUDECODE; claude -p --max-turns 1 < "$PROMPT_FILE" 2>/dev/null) || {
+RESULT=$(unset CLAUDECODE; claude -p --effort max --max-turns 1 < "$PROMPT_FILE" 2>/dev/null) || {
   echo "Error: claude -p failed"
   exit 1
 }

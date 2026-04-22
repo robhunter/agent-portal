@@ -93,7 +93,7 @@ if [ -z "$SESSION_ARGS" ]; then
 fi
 
 run_claude() {
-  echo "$FULL_PROMPT" | claude --print \
+  echo "$FULL_PROMPT" | claude --print --effort max \
     --allowedTools "Bash" "Edit" "Write" "Read" "Glob" "Grep" "WebSearch" "WebFetch" \
     "$@" \
     2>>logs/respond_errors.log
