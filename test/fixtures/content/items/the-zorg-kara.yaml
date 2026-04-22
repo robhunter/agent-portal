@@ -1,0 +1,23 @@
+id: the-zorg-kara
+title: "The Zorg"
+category: audiobooks
+format: audiobook
+source: audible
+source_url: https://www.audible.com/pd/The-Zorg-Audiobook/B0DRPRXR7P
+status: linked
+discovered: 2026-02-17T10:30:00Z
+reasoning: "Character Limit for the 18th century — a single horrifying event reconstructed from primary sources. Punchy at 7h43m."
+metadata:
+  author: Siddharth Kara
+  year: 2025
+  narrator: Dion Graham
+  length: "7h 43m"
+  tags: [nonfiction, history, slavery, abolition]
+  description: "The story of a slave ship insurance claim that sparked the abolition movement."
+sources:
+  - name: Audible
+    url: https://www.audible.com/pd/The-Zorg-Audiobook/B0DRPRXR7P
+    type: link-only
+  - name: Libro.fm
+    url: https://libro.fm/audiobooks/9781529966152-the-zorg
+    type: link-only

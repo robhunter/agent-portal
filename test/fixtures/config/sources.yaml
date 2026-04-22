@@ -1,0 +1,37 @@
+sources:
+  - id: archive-org
+    name: Archive.org
+    url: https://archive.org
+    type: downloadable
+    status: approved
+    categories: [books, audiobooks]
+  - id: audible
+    name: Audible
+    url: https://www.audible.com
+    type: link-only
+    status: approved
+    categories: [audiobooks]
+  - id: youtube
+    name: YouTube
+    url: https://youtube.com
+    type: link-only
+    status: approved
+    categories: [short-form-video]
+  - id: dcui
+    name: DC Universe Infinite
+    url: https://www.dcuniverseinfinite.com
+    type: link-only
+    status: approved
+    categories: [comics]
+  - id: globalcomix
+    name: GlobalComix
+    url: https://globalcomix.com
+    type: downloadable
+    status: approved
+    categories: [comics]
+  - id: shady-torrents
+    name: ShadyTorrents.example
+    url: https://shadytorrents.example.com
+    type: torrent
+    status: pending
+    categories: [movies, books]

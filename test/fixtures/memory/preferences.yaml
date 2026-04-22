@@ -1,0 +1,22 @@
+preferences:
+  likes:
+    - text: "Hard sci-fi with rigorous world-building and internal logic"
+      source: agent
+    - text: "Competent protagonists who solve problems methodically (Andy Weir style)"
+      source: agent
+    - text: "Deeply researched narrative nonfiction, author-narrated audiobooks"
+      source: agent
+    - text: "Tom King comics (Mister Miracle, Batman, Wonder Woman)"
+      source: user
+  dislikes:
+    - text: "Stories that sacrifice world-building consistency for plot convenience"
+      source: agent
+    - text: "YA dystopian fiction with arbitrary rules"
+      source: user
+  notes:
+    - text: "Has Netflix, no other streaming subscriptions currently"
+      source: user
+    - text: "Prefers EPUB over PDF for books"
+      source: user
+    - text: "San Diego Public Library card available for Libby/Hoopla"
+      source: agent

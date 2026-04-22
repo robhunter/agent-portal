@@ -1,0 +1,23 @@
+id: mister-miracle-king
+title: "Mister Miracle"
+category: comics
+format: cbz
+source: dcui
+source_url: https://www.dcuniverseinfinite.com/comics/book/mister-miracle/bf7847fa-6e9a-44d8-80f6-0fa2420799da
+status: linked
+discovered: 2026-02-13T17:00:00Z
+reasoning: "Tom King + Mitch Gerads. 12-issue masterpiece about Scott Free and Big Barda. Eisner Award winner."
+metadata:
+  author: Tom King
+  artist: Mitch Gerads
+  year: 2017
+  issues: 12
+  tags: [comics, dc, superhero, tom-king]
+  description: "Scott Free, the world's greatest escape artist, tries to escape the one trap from which no one can — death itself."
+sources:
+  - name: DC Universe Infinite
+    url: https://www.dcuniverseinfinite.com/comics/book/mister-miracle/bf7847fa-6e9a-44d8-80f6-0fa2420799da
+    type: link-only
+  - name: Hoopla (SD Library)
+    url: https://www.hoopladigital.com
+    type: link-only

@@ -1,0 +1,24 @@
+id: we-are-legion-taylor
+title: "We Are Legion (We Are Bob)"
+category: audiobooks
+format: audiobook
+source: audible
+source_url: https://www.audible.com/pd/We-Are-Legion-We-Are-Bob-Audiobook/B01L082HJ2
+status: linked
+discovered: 2026-02-13T15:00:00Z
+reasoning: "Software engineer wakes up as a Von Neumann probe AI. Funny, science-driven, satisfying in the Project Hail Mary way. Ray Porter narration is excellent."
+metadata:
+  author: Dennis E. Taylor
+  year: 2016
+  narrator: Ray Porter
+  length: "9h 56m"
+  tags: [sci-fi, humor, space, ai]
+  cover_url: https://covers.openlibrary.org/b/id/8543488-L.jpg
+  description: "A software engineer dies and wakes up as an AI tasked with exploring the galaxy."
+sources:
+  - name: Audible
+    url: https://www.audible.com/pd/We-Are-Legion-We-Are-Bob-Audiobook/B01L082HJ2
+    type: link-only
+  - name: Libby
+    url: https://www.overdrive.com/media/12148031/we-are-legion
+    type: link-only

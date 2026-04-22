@@ -1,0 +1,21 @@
+id: running-man-king
+title: "The Running Man"
+category: books
+format: epub
+source: audible
+source_url: https://www.audible.com/pd/The-Running-Man-Audiobook/B019WULXBS
+status: linked
+discovered: 2026-02-13T18:00:00Z
+reasoning: "Already on your to-read list. Stephen King writing as Bachman — dystopian thriller, tight and fast."
+metadata:
+  author: Stephen King
+  year: 1982
+  tags: [sci-fi, dystopian, thriller]
+  description: "In a future America, a desperate man enters a lethal game show where the prize is survival."
+sources:
+  - name: Audible
+    url: https://www.audible.com/pd/The-Running-Man-Audiobook/B019WULXBS
+    type: link-only
+  - name: Libro.fm
+    url: https://libro.fm/audiobooks/9781508217350-the-running-man
+    type: link-only

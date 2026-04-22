@@ -1,0 +1,23 @@
+id: replaceable-you-roach
+title: "Replaceable You"
+category: audiobooks
+format: audiobook
+source: audible
+source_url: https://www.audible.com/pd/Replaceable-You-Audiobook/B0F3QJ3T32
+status: linked
+discovered: 2026-02-18T10:00:00Z
+reasoning: "Mary Roach investigates body part replacement. Author-narrated, funny, science-driven. Perfect bedtime length at 8.5hrs."
+metadata:
+  author: Mary Roach
+  year: 2025
+  narrator: Mary Roach
+  length: "8h 37m"
+  tags: [nonfiction, science, humor, medicine]
+  description: "What happens when human body parts fail and how we're learning to replace them."
+sources:
+  - name: Audible
+    url: https://www.audible.com/pd/Replaceable-You-Audiobook/B0F3QJ3T32
+    type: link-only
+  - name: Kobo
+    url: https://www.kobo.com/us/en/audiobook/replaceable-you-1
+    type: link-only
