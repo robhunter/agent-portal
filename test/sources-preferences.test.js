@@ -324,3 +324,56 @@ describe('DELETE /api/preferences', () => {
     fs.rmSync(tmpDir, { recursive: true });
   });
 });
+
+describe('POST /api/preferences/category-request', () => {
+  it('writes feedback file and creates empty category', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cat-req-'));
+    const memDir = path.join(tmpDir, 'memory');
+    fs.mkdirSync(memDir, { recursive: true });
+    fs.copyFileSync(path.join(fixturesDir, 'memory', 'preferences.yaml'), path.join(memDir, 'preferences.yaml'));
+
+    const { server } = createTestSvr(tmpDir);
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/preferences/category-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: 'movies', context: 'I like Harrison Ford. Action sci-fi. No horror.' }),
+    });
+    assert.equal(status, 200);
+    assert.equal(data.category, 'movies');
+
+    // Verify feedback file was written
+    const fbPath = path.join(tmpDir, 'input', 'feedback', 'category-movies.feedback.yaml');
+    assert.ok(fs.existsSync(fbPath), 'Feedback file should exist');
+    const fbContent = fs.readFileSync(fbPath, 'utf-8');
+    assert.ok(fbContent.includes('type: category-request'));
+    assert.ok(fbContent.includes('category: movies'));
+    assert.ok(fbContent.includes('Harrison Ford'));
+
+    // Verify category was added to preferences
+    const { data: prefs } = await fetchJSON(port, '/api/preferences');
+    assert.ok(prefs.movies, 'movies category should exist');
+    assert.deepEqual(prefs.movies.likes, []);
+    assert.deepEqual(prefs.movies.dislikes, []);
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('rejects missing context', async () => {
+    const { server } = createTestSvr(fixturesDir);
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status } = await fetchJSON(port, '/api/preferences/category-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: 'movies' }),
+    });
+    assert.equal(status, 400);
+
+    server.close();
+  });
+});
