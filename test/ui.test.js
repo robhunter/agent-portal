@@ -410,4 +410,60 @@ describe('buildHTML', () => {
     assert.ok(scriptMatch, 'should contain a script tag');
     assert.doesNotThrow(() => new Function(scriptMatch[1]), 'embedded JS must be syntactically valid');
   });
+
+  it('includes library tab JS when configured', () => {
+    const config = {
+      ...baseConfig,
+      features: { library: { dataDir: 'content/items' }, tabs: ['library', 'journal', 'status'] },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('data-tab="library"'));
+    assert.ok(html.includes('function loadLibrary'));
+    assert.ok(html.includes('library: loadLibrary'));
+    assert.ok(html.includes('function renderLibraryGrid'));
+    assert.ok(html.includes('function viewLibraryItem'));
+    assert.ok(html.includes('function submitLibraryFeedback'));
+  });
+
+  it('excludes library tab JS when not configured', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(!html.includes('function loadLibrary'));
+    assert.ok(!html.includes('function renderLibraryGrid'));
+  });
+
+  it('library tab JS references correct API endpoints', () => {
+    const config = {
+      ...baseConfig,
+      features: { library: { dataDir: 'content/items' }, tabs: ['library', 'journal', 'status'] },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes("fetch('/api/library')"));
+    assert.ok(html.includes("fetch('/api/library/'"));
+    assert.ok(html.includes("fetch('/api/feedback/library/'"));
+  });
+
+  it('library tab includes media grid CSS', () => {
+    const config = {
+      ...baseConfig,
+      features: { library: { dataDir: 'content/items' }, tabs: ['library', 'journal', 'status'] },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('.media-grid'));
+    assert.ok(html.includes('.media-card'));
+    assert.ok(html.includes('.media-detail'));
+    assert.ok(html.includes('.youtube-embed'));
+    assert.ok(html.includes('.library-filter-bar'));
+    assert.ok(html.includes('.category-badge'));
+  });
+
+  it('library tab generates syntactically valid JavaScript', () => {
+    const config = {
+      ...baseConfig,
+      features: { library: { dataDir: 'content/items' }, tabs: ['library', 'journal', 'status'] },
+    };
+    const html = buildHTML(config);
+    const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+    assert.ok(scriptMatch, 'should contain a script tag');
+    assert.doesNotThrow(() => new Function(scriptMatch[1]), 'embedded JS with library tab must be syntactically valid');
+  });
 });
