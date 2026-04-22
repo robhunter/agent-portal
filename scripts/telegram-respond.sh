@@ -28,6 +28,9 @@ fi
 # Read agent config
 eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 
+# Read harness config from portal.config.json (defaults to claude-code)
+eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR")"
+
 # Mutex — wait up to 120s for lock (another cycle may be running)
 exec 200>"$AGENT_LOCK_FILE"
 flock -w 120 200 || { echo "Agent busy — cycle didn't complete in 2min"; exit 1; }
@@ -49,7 +52,7 @@ CYCLE_TS="$(date +%Y%m%d-%H%M)"
 CYCLE_LOG="logs/cycles/${CYCLE_TS}-respond.log"
 mkdir -p logs/cycles
 
-echo "Running claude..."
+echo "Running $HARNESS_TYPE..."
 
 # Build prompt: use respond-prompt from agent.yaml as the base, inject conversation context
 # If no respond-prompt configured, use a sensible default
@@ -68,69 +71,85 @@ CRITICAL: Your ENTIRE output will be sent directly as a Telegram message. Do NOT
 
 If the message implies actions (reprioritize, new project, dig deeper on something), do them using tools, then confirm what you did in your response."
 
-# Session continuation: reuse session if last human message was within 24 hours
-SESSION_FILE="logs/telegram_session_id"
-SESSION_ARGS=""
-
-PREV_HUMAN_TS=$(grep '"role":"human"' logs/conversation.jsonl | tail -2 | head -1 | jq -r '.ts // ""')
-if [ -n "$PREV_HUMAN_TS" ] && [ -f "$SESSION_FILE" ]; then
-  PREV_EPOCH=$(date -d "$PREV_HUMAN_TS" +%s 2>/dev/null || echo 0)
-  NOW_EPOCH=$(date +%s)
-  AGE=$((NOW_EPOCH - PREV_EPOCH))
-  SAVED_SESSION=$(cat "$SESSION_FILE")
-  if [ "$AGE" -lt 86400 ] && [ "$AGE" -ge 0 ] && [ -n "$SAVED_SESSION" ]; then
-    SESSION_ARGS="--resume $SAVED_SESSION"
-    echo "Continuing session $SAVED_SESSION (last message ${AGE}s ago)"
-  fi
-fi
-
-# Start a new session if not continuing
-if [ -z "$SESSION_ARGS" ]; then
-  NEW_SESSION=$(cat /proc/sys/kernel/random/uuid)
-  SESSION_ARGS="--session-id $NEW_SESSION"
-  echo "$NEW_SESSION" > "$SESSION_FILE"
-  echo "Starting new session $NEW_SESSION"
-fi
-
-run_claude() {
-  echo "$FULL_PROMPT" | claude --print --effort max \
-    --allowedTools "Bash" "Edit" "Write" "Read" "Glob" "Grep" "WebSearch" "WebFetch" \
-    "$@" \
-    2>>logs/respond_errors.log
-}
-
+# Session management and harness invocation — branched by harness type
 set +e
-if echo "$SESSION_ARGS" | grep -q -- '--resume'; then
-  SAVED_SESSION=$(echo "$SESSION_ARGS" | awk '{print $2}')
-  RESPONSE=$(run_claude --resume "$SAVED_SESSION")
-  CLAUDE_EXIT=$?
-  # Fallback: if --resume failed, start a fresh session
-  if [ "$CLAUDE_EXIT" -ne 0 ]; then
-    echo "Resume failed (exit $CLAUDE_EXIT), starting fresh session"
-    NEW_SESSION=$(cat /proc/sys/kernel/random/uuid)
-    echo "$NEW_SESSION" > "$SESSION_FILE"
-    RESPONSE=$(run_claude --session-id "$NEW_SESSION")
-    CLAUDE_EXIT=$?
-  fi
-else
-  NEW_SESSION=$(echo "$SESSION_ARGS" | awk '{print $2}')
-  RESPONSE=$(run_claude --session-id "$NEW_SESSION")
-  CLAUDE_EXIT=$?
-fi
+case "$HARNESS_TYPE" in
+  claude-code)
+    # Claude Code: explicit session management via --resume / --session-id
+    SESSION_FILE="logs/telegram_session_id"
+    SESSION_ARGS=""
+
+    PREV_HUMAN_TS=$(grep '"role":"human"' logs/conversation.jsonl | tail -2 | head -1 | jq -r '.ts // ""')
+    if [ -n "$PREV_HUMAN_TS" ] && [ -f "$SESSION_FILE" ]; then
+      PREV_EPOCH=$(date -d "$PREV_HUMAN_TS" +%s 2>/dev/null || echo 0)
+      NOW_EPOCH=$(date +%s)
+      AGE=$((NOW_EPOCH - PREV_EPOCH))
+      SAVED_SESSION=$(cat "$SESSION_FILE")
+      if [ "$AGE" -lt 86400 ] && [ "$AGE" -ge 0 ] && [ -n "$SAVED_SESSION" ]; then
+        SESSION_ARGS="--resume $SAVED_SESSION"
+        echo "Continuing session $SAVED_SESSION (last message ${AGE}s ago)"
+      fi
+    fi
+
+    if [ -z "$SESSION_ARGS" ]; then
+      NEW_SESSION=$(cat /proc/sys/kernel/random/uuid)
+      SESSION_ARGS="--session-id $NEW_SESSION"
+      echo "$NEW_SESSION" > "$SESSION_FILE"
+      echo "Starting new session $NEW_SESSION"
+    fi
+
+    run_harness() {
+      echo "$FULL_PROMPT" | claude --print --effort max \
+        --allowedTools "Bash" "Edit" "Write" "Read" "Glob" "Grep" "WebSearch" "WebFetch" \
+        "$@" \
+        2>>logs/respond_errors.log
+    }
+
+    if echo "$SESSION_ARGS" | grep -q -- '--resume'; then
+      SAVED_SESSION=$(echo "$SESSION_ARGS" | awk '{print $2}')
+      RESPONSE=$(run_harness --resume "$SAVED_SESSION")
+      HARNESS_EXIT=$?
+      if [ "$HARNESS_EXIT" -ne 0 ]; then
+        echo "Resume failed (exit $HARNESS_EXIT), starting fresh session"
+        NEW_SESSION=$(cat /proc/sys/kernel/random/uuid)
+        echo "$NEW_SESSION" > "$SESSION_FILE"
+        RESPONSE=$(run_harness --session-id "$NEW_SESSION")
+        HARNESS_EXIT=$?
+      fi
+    else
+      NEW_SESSION=$(echo "$SESSION_ARGS" | awk '{print $2}')
+      RESPONSE=$(run_harness --session-id "$NEW_SESSION")
+      HARNESS_EXIT=$?
+    fi
+    ;;
+
+  letta-code)
+    # Letta Code: persistent agent memory provides session continuity.
+    # --name targets the right agent; each invocation auto-creates a fresh conversation.
+    RESPONSE=$(echo "$FULL_PROMPT" | $HARNESS_CMD $HARNESS_EXTRA_FLAGS 2>>logs/respond_errors.log)
+    HARNESS_EXIT=$?
+    ;;
+
+  *)
+    # Script or unknown harness: no session management
+    RESPONSE=$(echo "$FULL_PROMPT" | $HARNESS_CMD $HARNESS_EXTRA_FLAGS 2>>logs/respond_errors.log)
+    HARNESS_EXIT=$?
+    ;;
+esac
 set -e
 
 # Write response to cycle log
 echo "$RESPONSE" > "$CYCLE_LOG"
 
-if [ "$CLAUDE_EXIT" -ne 0 ]; then
-  echo "Claude exited with code $CLAUDE_EXIT"
+if [ "$HARNESS_EXIT" -ne 0 ]; then
+  echo "Harness exited with code $HARNESS_EXIT"
   bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" error \
-    "Responsive cycle claude exited with code $CLAUDE_EXIT"
+    "Responsive cycle harness exited with code $HARNESS_EXIT"
 fi
 
 # Guard against empty response
 if [ -z "$RESPONSE" ]; then
-  echo "Warning: claude returned empty response (exit code $CLAUDE_EXIT)"
+  echo "Warning: harness returned empty response (exit code $HARNESS_EXIT)"
   RESPONSE="Sorry, I wasn't able to process that. Please try again."
 fi
 

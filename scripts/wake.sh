@@ -6,7 +6,7 @@ set -e
 
 # ── SETUP ──
 
-# Source nvm so claude is on PATH (not inherited by cron)
+# Source nvm so harness CLI is on PATH (not inherited by cron)
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 
@@ -41,6 +41,10 @@ fi
 # Read agent config
 eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 step "config loaded (name=$AGENT_NAME)"
+
+# Read harness config from portal.config.json (defaults to claude-code)
+eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR")"
+step "harness config loaded (type=$HARNESS_TYPE)"
 
 # Set timezone if configured
 if [ -n "$AGENT_TIMEZONE" ]; then
@@ -227,65 +231,65 @@ fi
 bash "$FRAMEWORK_DIR/scripts/run-hooks.sh" "$FRAMEWORK_DIR" "$AGENT_DIR" pre-cycle
 step "pre-cycle hooks done"
 
-# ── CLAUDE AUTH CHECK ──
+# ── HARNESS AUTH CHECK ──
 
 # Record auth confirmation timestamp (non-fatal)
 AUTH_CONFIRMED_FILE="$AGENT_DIR/logs/.auth-last-confirmed"
-if claude auth status --json 2>/dev/null | grep -q '"loggedIn": *true'; then
-  date -Iseconds > "$AUTH_CONFIRMED_FILE" 2>/dev/null || true
-  step "claude auth confirmed"
-else
-  step "claude auth NOT confirmed"
-fi
+case "$HARNESS_TYPE" in
+  claude-code)
+    if claude auth status --json 2>/dev/null | grep -q '"loggedIn": *true'; then
+      date -Iseconds > "$AUTH_CONFIRMED_FILE" 2>/dev/null || true
+      step "claude auth confirmed"
+    else
+      step "claude auth NOT confirmed"
+    fi
+    ;;
+  letta-code)
+    # Letta uses a static API key — no expiring auth to check
+    date -Iseconds > "$AUTH_CONFIRMED_FILE" 2>/dev/null || true
+    step "letta auth assumed (static API key)"
+    ;;
+  *)
+    step "auth check skipped (harness type: $HARNESS_TYPE)"
+    ;;
+esac
 
-# ── CLAUDE INVOCATION ──
+# ── HARNESS INVOCATION ──
 
-# Close lock fd before piping to Claude to prevent fd leak into child processes
-step "claude --print starting"
+# Close lock fd before piping to harness to prevent fd leak into child processes
+step "$HARNESS_CMD starting"
 
 MAX_RETRIES=2
 RETRY=0
-CLAUDE_EXIT=1
+HARNESS_EXIT=1
 
 set +e
-while [ "$CLAUDE_EXIT" -ne 0 ] && [ "$RETRY" -lt "$MAX_RETRIES" ]; do
+while [ "$HARNESS_EXIT" -ne 0 ] && [ "$RETRY" -lt "$MAX_RETRIES" ]; do
   if [ "$RETRY" -gt 0 ]; then
-    step "retrying claude (attempt $((RETRY+1)))"
+    step "retrying harness (attempt $((RETRY+1)))"
     bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" retry \
       "Retrying after failure (attempt $((RETRY+1)))"
     sleep 30
   fi
 
-  cat "$WAKE_PROMPT_FILE" 200>&- | claude --print --effort max \
-    --allowedTools "Bash" "Edit" "Write" "Read" "Glob" "Grep" "WebSearch" "WebFetch" \
-    "mcp__playwright__browser_click" "mcp__playwright__browser_close" \
-    "mcp__playwright__browser_console_messages" "mcp__playwright__browser_drag" \
-    "mcp__playwright__browser_evaluate" "mcp__playwright__browser_file_upload" \
-    "mcp__playwright__browser_fill_form" "mcp__playwright__browser_handle_dialog" \
-    "mcp__playwright__browser_hover" "mcp__playwright__browser_navigate" \
-    "mcp__playwright__browser_navigate_back" "mcp__playwright__browser_network_requests" \
-    "mcp__playwright__browser_press_key" "mcp__playwright__browser_resize" \
-    "mcp__playwright__browser_run_code" "mcp__playwright__browser_select_option" \
-    "mcp__playwright__browser_snapshot" "mcp__playwright__browser_tabs" \
-    "mcp__playwright__browser_take_screenshot" "mcp__playwright__browser_type" \
-    "mcp__playwright__browser_wait_for" \
+  cat "$WAKE_PROMPT_FILE" 200>&- | $HARNESS_CMD $HARNESS_EXTRA_FLAGS \
     200>&- 2>&1 | tee 200>&- "$CYCLE_LOG"
-  CLAUDE_EXIT=${PIPESTATUS[1]}
+  HARNESS_EXIT=${PIPESTATUS[1]}
 
   RETRY=$((RETRY + 1))
 done
 set -e
 
-step "claude --print finished (exit=$CLAUDE_EXIT, attempts=$RETRY)"
+step "harness finished (exit=$HARNESS_EXIT, attempts=$RETRY)"
 
 # ── POST-CYCLE ──
 
-# Return to agent dir in case Claude changed directories
+# Return to agent dir in case the harness changed directories
 cd "$AGENT_DIR"
 
-if [ "$CLAUDE_EXIT" -ne 0 ]; then
+if [ "$HARNESS_EXIT" -ne 0 ]; then
   bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" error \
-    "Claude exited with code $CLAUDE_EXIT after $RETRY attempt(s)"
+    "Harness exited with code $HARNESS_EXIT after $RETRY attempt(s)"
 fi
 
 # Run post-cycle hooks

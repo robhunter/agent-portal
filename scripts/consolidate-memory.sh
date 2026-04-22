@@ -113,7 +113,7 @@ EXISTING_OPERATIONAL=""
 EXISTING_INSIGHTS=""
 [ -f "$INSIGHTS_FILE" ] && EXISTING_INSIGHTS=$(cat "$INSIGHTS_FILE")
 
-# ── CONSOLIDATION VIA CLAUDE ──
+# ── CONSOLIDATION VIA HARNESS ──
 
 # Write prompt to temp file using heredoc to avoid shell escaping issues
 PROMPT_FILE=$(mktemp)
@@ -169,14 +169,34 @@ stale_learnings: []
 Focus on patterns, not individual events. Be concise.
 PROMPT_EOF
 
-# Run consolidation via claude -p
-# Unset CLAUDECODE to allow running from post-cycle hooks (where the parent
-# Claude session has already exited but the env var may linger)
-echo "Invoking claude -p for consolidation..."
-RESULT=$(unset CLAUDECODE; claude -p --effort max --max-turns 1 < "$PROMPT_FILE" 2>/dev/null) || {
-  echo "Error: claude -p failed"
-  exit 1
-}
+# Run consolidation via harness
+# Read harness config (defaults to claude-code)
+eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR")"
+
+# Build consolidation command based on harness type
+echo "Invoking $HARNESS_TYPE for consolidation..."
+case "$HARNESS_TYPE" in
+  claude-code)
+    # Unset CLAUDECODE to allow running from post-cycle hooks (where the parent
+    # Claude session has already exited but the env var may linger)
+    RESULT=$(unset CLAUDECODE; claude -p --effort max --max-turns 1 < "$PROMPT_FILE" 2>/dev/null) || {
+      echo "Error: claude -p failed"
+      exit 1
+    }
+    ;;
+  letta-code)
+    RESULT=$(letta -p $HARNESS_EXTRA_FLAGS < "$PROMPT_FILE" 2>/dev/null) || {
+      echo "Error: letta -p failed"
+      exit 1
+    }
+    ;;
+  *)
+    RESULT=$($HARNESS_CMD $HARNESS_EXTRA_FLAGS < "$PROMPT_FILE" 2>/dev/null) || {
+      echo "Error: $HARNESS_CMD failed"
+      exit 1
+    }
+    ;;
+esac
 
 # ── PARSE AND APPLY RESULTS ──
 
