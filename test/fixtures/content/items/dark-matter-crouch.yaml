@@ -1,0 +1,25 @@
+id: dark-matter-crouch
+title: "Dark Matter"
+category: books
+format: epub
+source: archive-org
+source_url: https://archive.org/details/darkmatter0000crou
+status: linked
+discovered: 2026-02-13T14:00:00Z
+reasoning: "Fast sci-fi thriller — Weir-adjacent in tone, smart and propulsive. Consistently called a one-sitting read."
+metadata:
+  author: Blake Crouch
+  year: 2016
+  tags: [sci-fi, thriller, parallel-universe]
+  cover_url: https://covers.openlibrary.org/b/id/8451934-L.jpg
+  description: "A man kidnapped into a parallel universe must find his way back to his family."
+sources:
+  - name: Archive.org
+    url: https://archive.org/details/darkmatter0000crou
+    type: downloadable
+  - name: Kobo
+    url: https://www.kobo.com/ww/en/ebook/dark-matter-40
+    type: link-only
+  - name: Libby
+    url: https://share.libbyapp.com/title/2575561
+    type: link-only

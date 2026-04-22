@@ -1,0 +1,23 @@
+id: dark-renaissance-greenblatt
+title: "Dark Renaissance"
+category: audiobooks
+format: audiobook
+source: audible
+source_url: https://www.audible.com/pd/Dark-Renaissance-Audiobook/B0FG972PJV
+status: linked
+discovered: 2026-02-17T10:00:00Z
+reasoning: "Christopher Marlowe — spy, playwright, murdered at 29. Literary biography as thriller. Same DNA as Dylan Goes Electric."
+metadata:
+  author: Stephen Greenblatt
+  year: 2025
+  narrator: Edoardo Ballerini
+  length: "9h 47m"
+  tags: [nonfiction, biography, history, elizabethan]
+  description: "The life of Christopher Marlowe — spy, playwright, heretic."
+sources:
+  - name: Audible
+    url: https://www.audible.com/pd/Dark-Renaissance-Audiobook/B0FG972PJV
+    type: link-only
+  - name: Kobo
+    url: https://www.kobo.com/us/en/audiobook/dark-renaissance-3
+    type: link-only

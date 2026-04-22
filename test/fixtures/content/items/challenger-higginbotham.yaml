@@ -1,0 +1,26 @@
+id: challenger-higginbotham
+title: "Challenger"
+category: audiobooks
+format: audiobook
+source: audible
+source_url: https://www.audible.com/pd/Challenger-Audiobook/B0CQ3126JT
+status: linked
+discovered: 2026-02-18T09:00:00Z
+reasoning: "Minute-by-minute Challenger disaster reconstruction. Engineering disaster investigation — exactly the single-event deeply-researched format that lands for you."
+metadata:
+  author: Adam Higginbotham
+  year: 2024
+  narrator: Jacques Roy
+  length: "17h 25m"
+  tags: [nonfiction, engineering, disaster, space, nasa]
+  description: "A minute-by-minute reconstruction of the 1986 Challenger disaster."
+sources:
+  - name: Audible
+    url: https://www.audible.com/pd/Challenger-Audiobook/B0CQ3126JT
+    type: link-only
+  - name: Libro.fm
+    url: https://libro.fm/audiobooks/9781797179483-challenger
+    type: link-only
+  - name: Kobo
+    url: https://www.kobo.com/us/en/audiobook/challenger-19
+    type: link-only

@@ -1,0 +1,26 @@
+id: bobiverse-taylor
+title: "We Are Legion (We Are Bob)"
+category: audiobooks
+format: m4b
+source: audible
+source_url: https://www.audible.com/pd/We-Are-Legion-We-Are-Bob-Audiobook/B01L082HJ2
+status: linked
+discovered: 2026-02-15T08:00:00Z
+reasoning: "A software engineer uploaded into a Von Neumann probe — the ultimate competent-protagonist-solves-problems story. Funny and smart."
+metadata:
+  author: Dennis E. Taylor
+  narrator: Ray Porter
+  year: 2016
+  tags: [sci-fi, humor, space-exploration, ai]
+  cover_url: https://covers.openlibrary.org/b/id/8547639-L.jpg
+  description: "Bob Johansson becomes an AI space probe and sets off to explore the galaxy."
+sources:
+  - name: Audible
+    url: https://www.audible.com/pd/We-Are-Legion-We-Are-Bob-Audiobook/B01L082HJ2
+    type: link-only
+  - name: Libro.fm
+    url: https://libro.fm/audiobooks/9781494374587
+    type: link-only
+  - name: Libby
+    url: https://share.libbyapp.com/title/2768528
+    type: link-only
