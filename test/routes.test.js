@@ -33,7 +33,7 @@ function createTestServer(configOverrides = {}) {
   require('../lib/routes/projects').register(routes, config);
   require('../lib/routes/outputs').register(routes, config);
   require('../lib/routes/deploy').register(routes, config);
-  require('../lib/routes/claude').register(routes, config);
+  require('../lib/routes/harness').register(routes, config);
   require('../lib/routes/uploads').register(routes, config);
 
   return { server: createServer(config, { routes, getHTML: () => '<html>test</html>' }), config };
@@ -1163,10 +1163,23 @@ describe('POST /api/services/:name/restart', () => {
   });
 });
 
-// --- Claude status route ---
+// --- Harness status route ---
 
-describe('GET /api/claude/status', () => {
-  it('returns a response with loggedIn field', async () => {
+describe('GET /api/harness/status', () => {
+  it('returns a response with loggedIn field (default claude-code)', async () => {
+    const result = createTestServer();
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/harness/status');
+    assert.equal(status, 200);
+    assert.equal(typeof data.loggedIn, 'boolean');
+
+    server.close();
+  });
+
+  it('backward compat: /api/claude/status still works', async () => {
     const result = createTestServer();
     const server = result.server;
     await new Promise(resolve => server.listen(0, resolve));
@@ -1175,6 +1188,20 @@ describe('GET /api/claude/status', () => {
     const { status, data } = await fetchJSON(port, '/api/claude/status');
     assert.equal(status, 200);
     assert.equal(typeof data.loggedIn, 'boolean');
+
+    server.close();
+  });
+
+  it('returns loggedIn true for script harness type', async () => {
+    const result = createTestServer({ harness: { type: 'script', command: 'echo' } });
+    const server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/harness/status');
+    assert.equal(status, 200);
+    assert.equal(data.loggedIn, true);
+    assert.equal(data.harnessType, 'script');
 
     server.close();
   });
