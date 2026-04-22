@@ -137,21 +137,22 @@ describe('POST /api/sources/:id/deny', () => {
   });
 });
 
-// --- Preferences ---
+// --- Preferences (per-category) ---
 
 describe('GET /api/preferences', () => {
-  it('returns preference model from memory/preferences.yaml', async () => {
+  it('returns per-category preference model', async () => {
     const { server } = createTestSvr(fixturesDir);
     await new Promise(r => server.listen(0, r));
     const port = server.address().port;
 
     const { status, data } = await fetchJSON(port, '/api/preferences');
     assert.equal(status, 200);
-    assert.ok(Array.isArray(data.likes));
-    assert.ok(Array.isArray(data.dislikes));
-    assert.ok(Array.isArray(data.notes));
-    assert.ok(data.likes.length >= 3);
-    assert.equal(data.likes[0].source, 'agent');
+    assert.ok(data.books, 'should have books category');
+    assert.ok(data.audiobooks, 'should have audiobooks category');
+    assert.ok(Array.isArray(data.books.likes));
+    assert.ok(Array.isArray(data.books.dislikes));
+    assert.ok(data.books.likes.length >= 1);
+    assert.equal(data.books.likes[0].source, 'agent');
 
     server.close();
   });
@@ -164,9 +165,7 @@ describe('GET /api/preferences', () => {
 
     const { status, data } = await fetchJSON(port, '/api/preferences');
     assert.equal(status, 200);
-    assert.deepEqual(data.likes, []);
-    assert.deepEqual(data.dislikes, []);
-    assert.deepEqual(data.notes, []);
+    assert.deepEqual(data, {});
 
     server.close();
     fs.rmSync(tmpDir, { recursive: true });
@@ -174,7 +173,7 @@ describe('GET /api/preferences', () => {
 });
 
 describe('POST /api/preferences', () => {
-  it('adds a new like entry with source: user', async () => {
+  it('adds entry to a category with source: user', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prefs-add-'));
     const memDir = path.join(tmpDir, 'memory');
     fs.mkdirSync(memDir, { recursive: true });
@@ -187,18 +186,57 @@ describe('POST /api/preferences', () => {
     const { status } = await fetchJSON(port, '/api/preferences', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ section: 'likes', text: 'Space opera with big fleet battles' }),
+      body: JSON.stringify({ category: 'books', section: 'likes', text: 'Space opera with fleet battles' }),
     });
     assert.equal(status, 200);
 
-    // Verify it was added
     const { data } = await fetchJSON(port, '/api/preferences');
-    const added = data.likes[data.likes.length - 1];
-    assert.equal(added.text, 'Space opera with big fleet battles');
+    const added = data.books.likes[data.books.likes.length - 1];
+    assert.equal(added.text, 'Space opera with fleet battles');
     assert.equal(added.source, 'user');
 
     server.close();
     fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('creates new category on first add', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prefs-newcat-'));
+    const memDir = path.join(tmpDir, 'memory');
+    fs.mkdirSync(memDir, { recursive: true });
+    fs.copyFileSync(path.join(fixturesDir, 'memory', 'preferences.yaml'), path.join(memDir, 'preferences.yaml'));
+
+    const { server } = createTestSvr(tmpDir);
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status } = await fetchJSON(port, '/api/preferences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: 'movies', section: 'likes', text: 'Harrison Ford' }),
+    });
+    assert.equal(status, 200);
+
+    const { data } = await fetchJSON(port, '/api/preferences');
+    assert.ok(data.movies, 'movies category should exist');
+    assert.equal(data.movies.likes[0].text, 'Harrison Ford');
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('rejects missing category', async () => {
+    const { server } = createTestSvr(fixturesDir);
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status } = await fetchJSON(port, '/api/preferences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ section: 'likes', text: 'test' }),
+    });
+    assert.equal(status, 400);
+
+    server.close();
   });
 
   it('rejects invalid section', async () => {
@@ -209,7 +247,7 @@ describe('POST /api/preferences', () => {
     const { status } = await fetchJSON(port, '/api/preferences', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ section: 'invalid', text: 'test' }),
+      body: JSON.stringify({ category: 'books', section: 'notes', text: 'test' }),
     });
     assert.equal(status, 400);
 
@@ -218,7 +256,7 @@ describe('POST /api/preferences', () => {
 });
 
 describe('PUT /api/preferences', () => {
-  it('updates an entry by index', async () => {
+  it('updates entry by category + section + index', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prefs-put-'));
     const memDir = path.join(tmpDir, 'memory');
     fs.mkdirSync(memDir, { recursive: true });
@@ -231,12 +269,12 @@ describe('PUT /api/preferences', () => {
     const { status } = await fetchJSON(port, '/api/preferences', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ section: 'likes', index: 0, text: 'Updated preference text' }),
+      body: JSON.stringify({ category: 'books', section: 'likes', index: 0, text: 'Updated preference' }),
     });
     assert.equal(status, 200);
 
     const { data } = await fetchJSON(port, '/api/preferences');
-    assert.equal(data.likes[0].text, 'Updated preference text');
+    assert.equal(data.books.likes[0].text, 'Updated preference');
 
     server.close();
     fs.rmSync(tmpDir, { recursive: true });
@@ -250,7 +288,7 @@ describe('PUT /api/preferences', () => {
     const { status } = await fetchJSON(port, '/api/preferences', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ section: 'likes', index: 999, text: 'test' }),
+      body: JSON.stringify({ category: 'books', section: 'likes', index: 999, text: 'test' }),
     });
     assert.equal(status, 400);
 
@@ -259,7 +297,7 @@ describe('PUT /api/preferences', () => {
 });
 
 describe('DELETE /api/preferences', () => {
-  it('removes an entry by index', async () => {
+  it('removes entry by category + section + index', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prefs-del-'));
     const memDir = path.join(tmpDir, 'memory');
     fs.mkdirSync(memDir, { recursive: true });
@@ -269,19 +307,18 @@ describe('DELETE /api/preferences', () => {
     await new Promise(r => server.listen(0, r));
     const port = server.address().port;
 
-    // Get initial count
     const { data: before } = await fetchJSON(port, '/api/preferences');
-    const countBefore = before.dislikes.length;
+    const countBefore = before.books.dislikes.length;
 
     const { status } = await fetchJSON(port, '/api/preferences', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ section: 'dislikes', index: 0 }),
+      body: JSON.stringify({ category: 'books', section: 'dislikes', index: 0 }),
     });
     assert.equal(status, 200);
 
     const { data: after } = await fetchJSON(port, '/api/preferences');
-    assert.equal(after.dislikes.length, countBefore - 1);
+    assert.equal(after.books.dislikes.length, countBefore - 1);
 
     server.close();
     fs.rmSync(tmpDir, { recursive: true });
