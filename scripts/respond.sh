@@ -78,6 +78,13 @@ Then log a brief event and commit.
 FALLBACK
 fi
 
+# Append shared instructions to prompt
+if [ -d "$FRAMEWORK_DIR/instructions" ]; then
+  for _instr in "$FRAMEWORK_DIR/instructions"/*.md; do
+    [ -f "$_instr" ] && echo "" >> "$PROMPT_FILE" && cat "$_instr" >> "$PROMPT_FILE"
+  done
+fi
+
 # Run harness with retry
 MAX_RETRIES=2
 RETRY=0
