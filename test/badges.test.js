@@ -189,6 +189,42 @@ describe('GET /api/badges — library', () => {
   });
 });
 
+describe('GET /api/badges — library badges disabled', () => {
+  let tmpDir, server, port;
+
+  before((_, done) => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'badges-lib-off-'));
+    const itemsDir = path.join(tmpDir, 'content', 'items');
+    fs.mkdirSync(itemsDir, { recursive: true });
+    fs.writeFileSync(path.join(itemsDir, 'item-a.yaml'), 'id: item-a\ntitle: A\n');
+    fs.writeFileSync(path.join(itemsDir, 'item-b.yaml'), 'id: item-b\ntitle: B\n');
+
+    const { server: s } = createBadgeServer(tmpDir, {
+      features: {
+        library: { dataDir: 'content/items', badges: false },
+        tabs: ['library', 'journal', 'status'],
+      },
+    });
+    server = s;
+    server.listen(0, () => {
+      port = server.address().port;
+      done();
+    });
+  });
+
+  after((_, done) => {
+    server.close(() => {
+      fs.rmSync(tmpDir, { recursive: true });
+      done();
+    });
+  });
+
+  it('omits library badge when badges: false', async () => {
+    const data = await fetchJSON(port, '/api/badges');
+    assert.equal(data.library, undefined);
+  });
+});
+
 describe('GET /api/badges — disabled features', () => {
   let tmpDir, server, port;
 

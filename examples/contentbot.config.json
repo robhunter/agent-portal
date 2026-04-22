@@ -16,7 +16,8 @@
   "sidebar": { "type": "simple" },
   "features": {
     "library": {
-      "dataDir": "content/items"
+      "dataDir": "content/items",
+      "badges": false
     },
     "tabs": ["library", "sources", "preferences", "journal", "status", "capabilities"]
   }
