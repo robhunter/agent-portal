@@ -466,4 +466,75 @@ describe('buildHTML', () => {
     assert.ok(scriptMatch, 'should contain a script tag');
     assert.doesNotThrow(() => new Function(scriptMatch[1]), 'embedded JS with library tab must be syntactically valid');
   });
+
+  it('includes preferences tab JS when configured', () => {
+    const config = {
+      ...baseConfig,
+      features: { library: true, tabs: ['preferences', 'journal', 'status'] },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('data-tab="preferences"'));
+    assert.ok(html.includes('function loadPreferences'));
+    assert.ok(html.includes('preferences: loadPreferences'));
+    assert.ok(html.includes('function addPref'));
+    assert.ok(html.includes('function editPref'));
+    assert.ok(html.includes('function deletePref'));
+  });
+
+  it('excludes preferences tab JS when not configured', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(!html.includes('function loadPreferences'));
+    assert.ok(!html.includes('function addPref'));
+  });
+
+  it('preferences tab JS references correct API endpoints', () => {
+    const config = {
+      ...baseConfig,
+      features: { library: true, tabs: ['preferences', 'journal', 'status'] },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes("fetch('/api/preferences')"));
+    assert.ok(html.includes("fetch('/api/preferences'"));
+  });
+
+  it('includes sources tab JS when configured', () => {
+    const config = {
+      ...baseConfig,
+      features: { library: true, tabs: ['sources', 'journal', 'status'] },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes('data-tab="sources"'));
+    assert.ok(html.includes('function loadSources'));
+    assert.ok(html.includes('sources: loadSources'));
+    assert.ok(html.includes('function approveSource'));
+    assert.ok(html.includes('function denySource'));
+  });
+
+  it('excludes sources tab JS when not configured', () => {
+    const html = buildHTML(baseConfig);
+    assert.ok(!html.includes('function loadSources'));
+    assert.ok(!html.includes('function approveSource'));
+  });
+
+  it('sources tab JS references correct API endpoints', () => {
+    const config = {
+      ...baseConfig,
+      features: { library: true, tabs: ['sources', 'journal', 'status'] },
+    };
+    const html = buildHTML(config);
+    assert.ok(html.includes("fetch('/api/sources')"));
+    assert.ok(html.includes("/approve"));
+    assert.ok(html.includes("/deny"));
+  });
+
+  it('generates syntactically valid JS with all ContentBot tabs', () => {
+    const config = {
+      ...baseConfig,
+      features: { library: { dataDir: 'content/items' }, tabs: ['library', 'preferences', 'sources', 'journal', 'status'] },
+    };
+    const html = buildHTML(config);
+    const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+    assert.ok(scriptMatch, 'should contain a script tag');
+    assert.doesNotThrow(() => new Function(scriptMatch[1]), 'embedded JS with all ContentBot tabs must be syntactically valid');
+  });
 });
