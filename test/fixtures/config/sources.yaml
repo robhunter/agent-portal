@@ -5,18 +5,26 @@ sources:
     type: downloadable
     status: approved
     categories: [books, audiobooks]
+    thumbnail_strategy: |
+      Use the Archive.org thumbnail API: https://archive.org/services/img/{identifier}
+      where {identifier} is the last path segment of the item URL.
+      Example: https://archive.org/details/maboroshi0000king → https://archive.org/services/img/maboroshi0000king
   - id: audible
     name: Audible
     url: https://www.audible.com
     type: link-only
     status: approved
     categories: [audiobooks]
+    thumbnail_strategy: |
+      Fetch the Audible product page and extract the og:image meta tag.
   - id: youtube
     name: YouTube
     url: https://youtube.com
     type: link-only
     status: approved
     categories: [short-form-video]
+    thumbnail_strategy: |
+      Use the YouTube thumbnail URL pattern: https://img.youtube.com/vi/{video_id}/hqdefault.jpg
   - id: dcui
     name: DC Universe Infinite
     url: https://www.dcuniverseinfinite.com
