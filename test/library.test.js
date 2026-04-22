@@ -124,6 +124,43 @@ describe('GET /api/library/:id', () => {
     server.close();
   });
 
+  it('merges feedback from processed/ subdirectory', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'library-processed-'));
+    const itemsDir = path.join(tmpDir, 'content', 'items');
+    const processedDir = path.join(tmpDir, 'input', 'feedback', 'processed');
+    fs.mkdirSync(itemsDir, { recursive: true });
+    fs.mkdirSync(processedDir, { recursive: true });
+    fs.writeFileSync(path.join(itemsDir, 'test-item.yaml'),
+      'id: test-item\ntitle: Test Item\ncategory: comics\n');
+    fs.writeFileSync(path.join(processedDir, 'test-item.feedback.yaml'),
+      'rating: up\nnotes: Great stuff\n');
+
+    const config = {
+      name: 'Test', port: 0, agentDir: tmpDir,
+      cronFile: '/nonexistent/cron', lockFile: '/tmp/test-processed-lock',
+      _serverStartTime: Date.now(),
+      features: { library: { dataDir: 'content/items' } },
+    };
+    const routes = {};
+    require('../lib/routes/library').register(routes, config);
+    const server = createServer(config, { routes, getHTML: () => '<html>test</html>' });
+    await new Promise(resolve => server.listen(0, resolve));
+    const port = server.address().port;
+
+    // List should show as rated
+    const { data: list } = await fetchJSON(port, '/api/library');
+    assert.equal(list[0].rating, 'up');
+    assert.equal(list[0].reviewed, true);
+
+    // Detail should merge feedback
+    const { data: detail } = await fetchJSON(port, '/api/library/test-item');
+    assert.ok(detail.feedback);
+    assert.equal(detail.feedback.rating, 'up');
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
   it('returns item without feedback when none exists', async () => {
     const { server } = createLibraryServer();
     await new Promise(resolve => server.listen(0, resolve));
