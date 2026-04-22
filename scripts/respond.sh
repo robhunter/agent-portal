@@ -88,7 +88,7 @@ while [ "$CLAUDE_EXIT" -ne 0 ] && [ "$RETRY" -lt "$MAX_RETRIES" ]; do
   fi
 
   set +e
-  cat "$PROMPT_FILE" | claude --print \
+  cat "$PROMPT_FILE" | claude --print --effort max \
     --allowedTools "Bash" "Read" "Write" "Edit" "Glob" "Grep" "WebSearch" "WebFetch" \
     2>&1 | tee "$CYCLE_LOG"
   CLAUDE_EXIT=${PIPESTATUS[1]}
