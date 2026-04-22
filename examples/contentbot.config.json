@@ -1,0 +1,23 @@
+{
+  "name": "ContentBot",
+  "port": 8084,
+  "agentDir": "/root/contentbot",
+  "cronFile": "/etc/cron.d/contentbot",
+  "lockFile": "/tmp/contentbot.lock",
+  "harness": {
+    "type": "letta-code",
+    "command": "letta -p",
+    "extraFlags": "--name contentbot --model sonnet --allowedTools Bash,Edit,Write,Read,Glob,Grep,WebSearch,WebFetch"
+  },
+  "authors": {
+    "rob": { "color": "#1565c0", "bg": "#e3f2fd" },
+    "contentbot": { "color": "#e65100", "bg": "#fff3e0" }
+  },
+  "sidebar": { "type": "simple" },
+  "features": {
+    "library": {
+      "dataDir": "content/items"
+    },
+    "tabs": ["library", "sources", "preferences", "journal", "status", "capabilities"]
+  }
+}
