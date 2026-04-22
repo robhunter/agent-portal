@@ -254,6 +254,16 @@ case "$HARNESS_TYPE" in
     ;;
 esac
 
+# ── APPEND SHARED INSTRUCTIONS TO PROMPT ──
+
+# Inject framework instructions so the agent always has them in context
+if [ -d "$FRAMEWORK_DIR/instructions" ]; then
+  for _instr in "$FRAMEWORK_DIR/instructions"/*.md; do
+    [ -f "$_instr" ] && echo "" >> "$WAKE_PROMPT_FILE" && cat "$_instr" >> "$WAKE_PROMPT_FILE"
+  done
+  step "shared instructions appended to wake prompt"
+fi
+
 # ── HARNESS INVOCATION ──
 
 # Close lock fd before piping to harness to prevent fd leak into child processes

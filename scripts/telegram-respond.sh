@@ -71,6 +71,14 @@ CRITICAL: Your ENTIRE output will be sent directly as a Telegram message. Do NOT
 
 If the message implies actions (reprioritize, new project, dig deeper on something), do them using tools, then confirm what you did in your response."
 
+# Append shared instructions
+if [ -d "$FRAMEWORK_DIR/instructions" ]; then
+  for _instr in "$FRAMEWORK_DIR/instructions"/*.md; do
+    [ -f "$_instr" ] && FULL_PROMPT="${FULL_PROMPT}
+$(cat "$_instr")"
+  done
+fi
+
 # Session management and harness invocation — branched by harness type
 set +e
 case "$HARNESS_TYPE" in
