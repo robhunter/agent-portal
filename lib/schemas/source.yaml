@@ -1,0 +1,74 @@
+# Source schema — defines the fields that agent-portal understands
+# for content sources in config/sources.yaml.
+#
+# Agents may add additional fields beyond this schema. Unknown fields
+# pass through the API (GET /api/sources) but are not rendered in the
+# portal UI unless explicitly supported.
+
+fields:
+  - name: id
+    type: string
+    required: true
+    description: Unique identifier for this source (kebab-case)
+    example: archive-org
+
+  - name: name
+    type: string
+    required: true
+    description: Human-readable display name
+    example: Archive.org
+
+  - name: url
+    type: string
+    required: true
+    description: Base URL for the source
+    example: https://archive.org
+
+  - name: type
+    type: string
+    required: true
+    description: How content from this source is accessed
+    values: [link-only, downloadable, torrent]
+    details: |
+      link-only: portal links to the source (streaming, purchase pages)
+      downloadable: agent can download files (epub, cbz, audio, video)
+      torrent: agent can operate a torrent client (Phase 3)
+
+  - name: status
+    type: string
+    required: true
+    description: Whether the agent may recommend content from this source
+    values: [approved, pending, denied]
+    details: |
+      approved: agent can recommend from this source
+      pending: agent discovered this source but user hasn't approved it yet
+      denied: user rejected this source
+
+  - name: categories
+    type: array of strings
+    required: true
+    description: Which media categories this source serves
+    example: [comics, books]
+
+  - name: thumbnail_strategy
+    type: text (multiline)
+    required: false
+    description: |
+      Freeform instructions for how the agent should find thumbnail
+      images for items from this source. The agent reads this when
+      creating content items and uses it to populate metadata.cover_url.
+    example: |
+      Use the Archive.org thumbnail API: https://archive.org/services/img/{identifier}
+      where {identifier} is the last path segment of the item URL.
+
+# File format: config/sources.yaml
+# ─────────────────────────────────
+# sources:
+#   - id: archive-org
+#     name: Archive.org
+#     url: https://archive.org
+#     type: downloadable
+#     status: approved
+#     categories: [comics, books]
+#     thumbnail_strategy: |
+#       Use https://archive.org/services/img/{identifier}
