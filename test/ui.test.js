@@ -171,11 +171,11 @@ describe('buildHTML', () => {
     assert.ok(html.includes('function runRespond'));
   });
 
-  it('includes Claude credentials status indicator', () => {
+  it('includes harness credentials status indicator', () => {
     const html = buildHTML(baseConfig);
-    assert.ok(html.includes('id="claude-status"'));
-    assert.ok(html.includes('function updateClaudeStatus'));
-    assert.ok(html.includes('setInterval(updateClaudeStatus'));
+    assert.ok(html.includes('id="harness-status"'));
+    assert.ok(html.includes('function updateHarnessStatus'));
+    assert.ok(html.includes('setInterval(updateHarnessStatus'));
   });
 
   it('includes cycle-running status indicator', () => {

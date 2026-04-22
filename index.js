@@ -58,7 +58,7 @@ require('./lib/routes/requests').register(routes, config);
 require('./lib/routes/projects').register(routes, config);
 require('./lib/routes/outputs').register(routes, config);
 require('./lib/routes/deploy').register(routes, config);
-require('./lib/routes/claude').register(routes, config);
+require('./lib/routes/harness').register(routes, config);
 require('./lib/routes/uploads').register(routes, config);
 require('./lib/routes/todos').register(routes, config);
 require('./lib/routes/badges').register(routes, config);
