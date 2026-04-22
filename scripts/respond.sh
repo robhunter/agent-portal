@@ -22,6 +22,9 @@ fi
 # Read agent config
 eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 
+# Read harness config from portal.config.json (defaults to claude-code)
+eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR")"
+
 # Mutex — prevent overlapping with a full cycle
 exec 200>"$AGENT_LOCK_FILE"
 if ! flock -n 200; then
@@ -75,12 +78,12 @@ Then log a brief event and commit.
 FALLBACK
 fi
 
-# Run Claude with retry
+# Run harness with retry
 MAX_RETRIES=2
 RETRY=0
-CLAUDE_EXIT=1
+HARNESS_EXIT=1
 
-while [ "$CLAUDE_EXIT" -ne 0 ] && [ "$RETRY" -lt "$MAX_RETRIES" ]; do
+while [ "$HARNESS_EXIT" -ne 0 ] && [ "$RETRY" -lt "$MAX_RETRIES" ]; do
   if [ "$RETRY" -gt 0 ]; then
     bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" retry \
       "Retrying respond cycle (attempt $((RETRY+1)))"
@@ -88,10 +91,9 @@ while [ "$CLAUDE_EXIT" -ne 0 ] && [ "$RETRY" -lt "$MAX_RETRIES" ]; do
   fi
 
   set +e
-  cat "$PROMPT_FILE" | claude --print --effort max \
-    --allowedTools "Bash" "Read" "Write" "Edit" "Glob" "Grep" "WebSearch" "WebFetch" \
+  cat "$PROMPT_FILE" | $HARNESS_CMD $HARNESS_EXTRA_FLAGS \
     2>&1 | tee "$CYCLE_LOG"
-  CLAUDE_EXIT=${PIPESTATUS[1]}
+  HARNESS_EXIT=${PIPESTATUS[1]}
   set -e
 
   RETRY=$((RETRY + 1))
@@ -99,9 +101,9 @@ done
 
 cd "$AGENT_DIR"
 
-if [ "$CLAUDE_EXIT" -ne 0 ]; then
+if [ "$HARNESS_EXIT" -ne 0 ]; then
   bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" error \
-    "Respond cycle: Claude exited with code $CLAUDE_EXIT after $RETRY attempt(s)"
+    "Respond cycle: harness exited with code $HARNESS_EXIT after $RETRY attempt(s)"
 fi
 
 CYCLE_END_EPOCH=$(date +%s)
