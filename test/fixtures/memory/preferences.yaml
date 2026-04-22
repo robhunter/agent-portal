@@ -1,22 +1,35 @@
 preferences:
-  likes:
-    - text: "Hard sci-fi with rigorous world-building and internal logic"
-      source: agent
-    - text: "Competent protagonists who solve problems methodically (Andy Weir style)"
-      source: agent
-    - text: "Deeply researched narrative nonfiction, author-narrated audiobooks"
-      source: agent
-    - text: "Tom King comics (Mister Miracle, Batman, Wonder Woman)"
-      source: user
-  dislikes:
-    - text: "Stories that sacrifice world-building consistency for plot convenience"
-      source: agent
-    - text: "YA dystopian fiction with arbitrary rules"
-      source: user
-  notes:
-    - text: "Has Netflix, no other streaming subscriptions currently"
-      source: user
-    - text: "Prefers EPUB over PDF for books"
-      source: user
-    - text: "San Diego Public Library card available for Libby/Hoopla"
-      source: agent
+  books:
+    likes:
+      - text: "Hard sci-fi with rigorous world-building and internal logic"
+        source: agent
+      - text: "Competent protagonists who solve problems methodically (Andy Weir style)"
+        source: agent
+    dislikes:
+      - text: "Stories that sacrifice world-building consistency for plot convenience"
+        source: agent
+      - text: "Game-universe novels (Doom, StarCraft, etc.)"
+        source: user
+  audiobooks:
+    likes:
+      - text: "Deeply researched narrative nonfiction, author-narrated"
+        source: agent
+      - text: "Under 12 hours ideal"
+        source: user
+    dislikes:
+      - text: "Complex multi-character casts (hard to track in audio)"
+        source: user
+  comics:
+    likes:
+      - text: "Tom King (Mister Miracle, Batman, Wonder Woman)"
+        source: user
+      - text: "Game-universe content is fine here"
+        source: user
+    dislikes: []
+  short-form-video:
+    likes:
+      - text: "Gaming content (Doom, StarCraft, etc.)"
+        source: user
+      - text: "Engineering and space content"
+        source: agent
+    dislikes: []
