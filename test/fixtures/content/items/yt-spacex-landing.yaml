@@ -1,0 +1,19 @@
+id: yt-spacex-landing
+title: "SpaceX Starship Full Flight Test"
+category: short-form-video
+format: video
+source: youtube
+source_url: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+status: linked
+discovered: 2026-02-14T08:00:00Z
+reasoning: "Full uncut footage of the latest Starship test flight. Given your interest in space and engineering, this is must-watch."
+metadata:
+  channel: SpaceX
+  duration: "12:34"
+  tags: [space, engineering, spacex, rockets]
+  video_id: dQw4w9WgXcQ
+  description: "Complete footage of Starship's orbital test flight with booster catch attempt."
+sources:
+  - name: YouTube
+    url: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+    type: link-only

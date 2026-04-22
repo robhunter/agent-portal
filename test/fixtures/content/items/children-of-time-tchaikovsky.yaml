@@ -1,0 +1,22 @@
+id: children-of-time-tchaikovsky
+title: "Children of Time"
+category: books
+format: epub
+source: archive-org
+source_url: https://archive.org/details/childrenoftime0000tcha_k7z6
+status: linked
+discovered: 2026-02-13T14:30:00Z
+reasoning: "Hard sci-fi about evolved spider intelligence. Won the Arthur C. Clarke Award. Deep worldbuilding, genuinely alien perspectives."
+metadata:
+  author: Adrian Tchaikovsky
+  year: 2015
+  tags: [sci-fi, evolution, space, hard-sci-fi]
+  cover_url: https://covers.openlibrary.org/b/id/8091016-L.jpg
+  description: "Humanity's last ark ship finds a planet where spiders have evolved intelligence."
+sources:
+  - name: Archive.org
+    url: https://archive.org/details/childrenoftime0000tcha_k7z6
+    type: downloadable
+  - name: Kobo
+    url: https://www.kobo.com/us/en/ebook/children-of-time-6
+    type: link-only

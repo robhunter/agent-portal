@@ -1,0 +1,22 @@
+id: man-who-saw-seconds-boldizar
+title: "The Man Who Saw Seconds"
+category: books
+format: epub
+source: kobo
+source_url: https://www.kobo.com/us/en/ebook/the-man-who-saw-seconds
+status: linked
+discovered: 2026-02-16T16:45:00Z
+reasoning: "Mind-bending thriller about a man who can see a few seconds into the future. Tight, propulsive, and surprisingly deep on free will."
+metadata:
+  author: Alexander Boldizar
+  year: 2016
+  tags: [thriller, sci-fi, philosophical, free-will]
+  cover_url: https://covers.openlibrary.org/b/id/8224701-L.jpg
+  description: "A man who can see seconds into the future becomes the world's most wanted fugitive."
+sources:
+  - name: Kobo
+    url: https://www.kobo.com/us/en/ebook/the-man-who-saw-seconds
+    type: link-only
+  - name: Archive.org
+    url: https://archive.org/details/manwhosawseconds
+    type: link-only

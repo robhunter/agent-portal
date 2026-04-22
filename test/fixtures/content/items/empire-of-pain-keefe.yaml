@@ -1,0 +1,26 @@
+id: empire-of-pain-keefe
+title: "Empire of Pain"
+category: audiobooks
+format: m4b
+source: audible
+source_url: https://www.audible.com/pd/Empire-of-Pain-Audiobook/0593344383
+status: linked
+discovered: 2026-03-05T09:20:00Z
+reasoning: "The Sackler family and the opioid crisis — investigative journalism turned into gripping narrative. Keefe is meticulous."
+metadata:
+  author: Patrick Radden Keefe
+  narrator: Patrick Radden Keefe
+  year: 2021
+  tags: [nonfiction, investigative, true-crime, healthcare]
+  cover_url: https://covers.openlibrary.org/b/id/10552686-L.jpg
+  description: "The saga of the Sackler dynasty and their role in the opioid epidemic."
+sources:
+  - name: Audible
+    url: https://www.audible.com/pd/Empire-of-Pain-Audiobook/0593344383
+    type: link-only
+  - name: Libro.fm
+    url: https://libro.fm/audiobooks/9780593344385
+    type: link-only
+  - name: Libby
+    url: https://share.libbyapp.com/title/5765576
+    type: link-only
