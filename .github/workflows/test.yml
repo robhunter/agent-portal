@@ -13,13 +13,7 @@ jobs:
         with:
           node-version: "22"
       - run: npm install
-      - run: node --test test/*.test.js
-      - name: Run shell tests
-        run: |
-          for f in test/*.test.sh; do
-            echo "=== $f ==="
-            bash "$f" || exit 1
-          done
+      - run: npm test
 
   python-tests:
     runs-on: ubuntu-latest

@@ -204,7 +204,9 @@ agentDir/
 ### Run tests
 
 ```bash
-node --test test/*.test.js
+npm test              # runs both node and shell tests (same as CI)
+npm run test:node     # node tests only (test/*.test.js)
+npm run test:shell    # shell tests only (test/*.test.sh)
 ```
 
 ### Start the agent-controller
