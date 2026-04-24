@@ -404,14 +404,16 @@ describe('POST /api/cron/toggle', () => {
 });
 
 describe('POST /api/cycle/run', () => {
-  let server, port;
+  let server, port, tmpDir;
   const lockFile = '/tmp/test-portal-lock-nonexistent-cycle';
 
   before(async () => {
     // Use a lock file that won't exist (so lock check says "not running")
     // Clean up stale markers from previous runs
     try { fs.unlinkSync(lockFile + '.starting'); } catch {}
-    const result = createTestServer({ lockFile });
+    // Use a tmpdir as agentDir so wake.sh writes its step log there, not in test/fixtures
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-cycle-run-'));
+    const result = createTestServer({ lockFile, agentDir: tmpDir });
     server = result.server;
     await new Promise(resolve => server.listen(0, resolve));
     port = server.address().port;
@@ -420,6 +422,7 @@ describe('POST /api/cycle/run', () => {
   after(() => {
     server.close();
     try { fs.unlinkSync(lockFile + '.starting'); } catch {}
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   });
 
   it('returns 200 when no cycle is running (wake.sh may not exist but spawn succeeds)', async () => {
@@ -433,13 +436,14 @@ describe('POST /api/cycle/run', () => {
 });
 
 describe('POST /api/cycle/respond', () => {
-  let server, port;
+  let server, port, tmpDir;
   const lockFile = '/tmp/test-portal-lock-nonexistent-respond';
 
   before(async () => {
     // Clean up stale markers from previous runs
     try { fs.unlinkSync(lockFile + '.starting'); } catch {}
-    const result = createTestServer({ lockFile });
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-cycle-respond-'));
+    const result = createTestServer({ lockFile, agentDir: tmpDir });
     server = result.server;
     await new Promise(resolve => server.listen(0, resolve));
     port = server.address().port;
@@ -448,6 +452,7 @@ describe('POST /api/cycle/respond', () => {
   after(() => {
     server.close();
     try { fs.unlinkSync(lockFile + '.starting'); } catch {}
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   });
 
   it('returns 200 when no cycle is running (respond.sh resolved from framework)', async () => {
