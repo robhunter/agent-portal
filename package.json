@@ -1,13 +1,15 @@
 {
   "name": "agent-portal",
-  "version": "1.5.13",
+  "version": "1.5.14",
   "description": "Shared web portal for autonomous agents",
   "main": "index.js",
   "bin": {
     "agent-portal": "index.js"
   },
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js && for f in test/*.test.sh; do bash \"$f\" || exit 1; done",
+    "test:node": "node --test test/*.test.js",
+    "test:shell": "for f in test/*.test.sh; do bash \"$f\" || exit 1; done"
   },
   "repository": {
     "type": "git",
