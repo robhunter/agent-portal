@@ -9,11 +9,19 @@ snippet, and relevance score.
 """
 
 import math
+import os
 import sqlite3
 import struct
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Prefer the OS CA bundle when present so HTTPS works inside TLS-intercepting
+# environments (e.g. mitmproxy-style sandboxes). httpx — which fastembed uses
+# to pull models from HuggingFace — defaults to certifi's bundle, which lacks
+# any system-injected proxy CA.
+if "SSL_CERT_FILE" not in os.environ and os.path.exists("/etc/ssl/certs/ca-certificates.crt"):
+    os.environ["SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
 
 import numpy as np
 from fastembed import TextEmbedding
