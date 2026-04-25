@@ -30,6 +30,7 @@ from fastembed import TextEmbedding
 EMBED_DIM = 384
 SIMILARITY_THRESHOLD = 0.92
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
+EMBED_BATCH_SIZE = 50
 
 
 def init_db(db_path: str) -> sqlite3.Connection:
@@ -206,9 +207,13 @@ def main():
 
     print(f"Indexing {len(all_new)} new entries ({len(new_journal)} journal, {len(new_events)} events)...")
 
-    # Generate embeddings in batch
+    # Embed in chunks so a long catch-up after an outage doesn't OOM the worker
+    # — fastembed materializes the whole batch at peak, so 700+ entries can
+    # exceed available memory inside small containers.
     texts = [e["content"] for e in all_new]
-    embeddings = list(model.embed(texts))
+    embeddings = []
+    for i in range(0, len(texts), EMBED_BATCH_SIZE):
+        embeddings.extend(model.embed(texts[i:i + EMBED_BATCH_SIZE]))
 
     indexed = 0
     skipped = 0
