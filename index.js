@@ -65,6 +65,7 @@ require('./lib/routes/library').register(routes, config);
 require('./lib/routes/sources').register(routes, config);
 require('./lib/routes/preferences').register(routes, config);
 require('./lib/routes/rated-items').register(routes, config);
+require('./lib/routes/onboarding').register(routes, config);
 require('./lib/routes/media-files').register(routes, config);
 require('./lib/routes/badges').register(routes, config);
 require('./lib/routes/capabilities').register(routes, config);
