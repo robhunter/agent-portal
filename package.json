@@ -1,6 +1,6 @@
 {
   "name": "agent-portal",
-  "version": "1.5.17",
+  "version": "1.5.18",
   "description": "Shared web portal for autonomous agents",
   "main": "index.js",
   "bin": {
