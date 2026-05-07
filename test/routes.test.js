@@ -403,6 +403,116 @@ describe('POST /api/cron/toggle', () => {
   });
 });
 
+describe('GET /api/cron/schedule', () => {
+  let server, port, tmpDir;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-cron-sched-get-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+    const cronFile = path.join(tmpDir, 'test-cron');
+    fs.writeFileSync(cronFile, '0 0,2,4,6,8,10,12,14,16,18,20,22 * * * root bash /tmp/wake.sh\n');
+    const result = createTestServer({ agentDir: tmpDir, cronFile });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns the parsed interval and validIntervals list', async () => {
+    const { status, data } = await fetchJSON(port, '/api/cron/schedule');
+    assert.equal(status, 200);
+    assert.deepEqual(data.validIntervals, [1, 2, 3, 4, 6, 8, 12, 24]);
+    assert.equal(data.cron, '0 0,2,4,6,8,10,12,14,16,18,20,22 * * *');
+    if (data.interval) {
+      assert.equal(data.interval.intervalHours, 2);
+      assert.equal(data.interval.anchorHour, 0);
+      assert.equal(data.interval.anchorMinute, 0);
+    }
+  });
+});
+
+describe('POST /api/cron/schedule', () => {
+  let server, port, tmpDir;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-cron-sched-post-'));
+    fs.mkdirSync(path.join(tmpDir, 'journals'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+    const cronFile = path.join(tmpDir, 'test-cron');
+    fs.writeFileSync(cronFile, '0 0,2,4,6,8,10,12,14,16,18,20,22 * * * root bash /tmp/wake.sh\n');
+    const agentYaml = path.join(tmpDir, 'agent.yaml');
+    fs.writeFileSync(agentYaml,
+      'name: testagent\n' +
+      'port: 9000\n' +
+      `lock-file: /tmp/test-lock\n` +
+      `cron-file: ${cronFile}\n` +
+      `cron-schedule: "0 0,2,4,6,8,10,12,14,16,18,20,22 * * *"\n` +
+      'timezone: UTC\n'
+    );
+    const result = createTestServer({ agentDir: tmpDir, cronFile });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('rejects invalid intervalHours', async () => {
+    const { status, data } = await fetchJSON(port, '/api/cron/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intervalHours: 5, anchorHour: 0, anchorMinute: 0 }),
+    });
+    assert.equal(status, 400);
+    assert.match(data.error, /intervalHours must be one of/);
+  });
+
+  it('rejects out-of-range anchor hour', async () => {
+    const { status, data } = await fetchJSON(port, '/api/cron/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intervalHours: 2, anchorHour: 25, anchorMinute: 0 }),
+    });
+    assert.equal(status, 400);
+    assert.match(data.error, /anchorHour must be 0-23/);
+  });
+
+  it('rejects malformed JSON body', async () => {
+    const { status, data } = await fetchJSON(port, '/api/cron/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{not-json',
+    });
+    assert.equal(status, 400);
+    assert.match(data.error, /Invalid JSON body/);
+  });
+
+  it('updates agent.yaml and reinstalls cron on valid input', async () => {
+    const { status, data } = await fetchJSON(port, '/api/cron/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intervalHours: 4, anchorHour: 11, anchorMinute: 0 }),
+    });
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
+    assert.equal(data.cron, '0 3,7,11,15,19,23 * * *');
+
+    const yamlContent = fs.readFileSync(path.join(tmpDir, 'agent.yaml'), 'utf-8');
+    assert.match(yamlContent, /cron-schedule:\s*"?0 3,7,11,15,19,23 \* \* \*"?/);
+
+    const cronContent = fs.readFileSync(path.join(tmpDir, 'test-cron'), 'utf-8');
+    assert.match(cronContent, /^0 3,7,11,15,19,23 \* \* \* root /m);
+  });
+});
+
 describe('POST /api/cycle/run', () => {
   let server, port, tmpDir;
   const lockFile = '/tmp/test-portal-lock-nonexistent-cycle';
