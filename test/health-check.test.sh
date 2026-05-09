@@ -268,6 +268,158 @@ assert_contains "$STDERR" "missing url field" "warning identifies bad endpoint"
 GOOD_COUNT=$(jq -s '[.[] | select(.ok==true)] | length' "$TMPDIR/logs/health.jsonl")
 assert_eq "1" "$GOOD_COUNT" "valid endpoint still logged ok:true"
 
+# --- Test 12: --source happy path — two projects each with one endpoint ---
+echo "## Test 12: --source projects.yaml with two projects — project field uses project name"
+reset_logs
+# Use a benign minimal agent.yaml to keep the dir realistic; --source mode shouldn't read it.
+write_yaml <<EOF
+name: orchestrator
+EOF
+mkdir -p "$TMPDIR/memory"
+cat > "$TMPDIR/memory/projects.yaml" <<EOF
+projects:
+  - name: ProjectA
+    endpoints:
+      - url: http://127.0.0.1:$PORT/200
+        type: http
+  - name: ProjectB
+    endpoints:
+      - url: http://127.0.0.1:$PORT/200
+        type: mcp
+EOF
+EXIT=0
+"$HEALTH" "$TMPDIR" --source memory/projects.yaml >/dev/null 2>&1 || EXIT=$?
+assert_eq "0" "$EXIT" "exit 0 when all source endpoints 2xx"
+LINES=$(wc -l < "$TMPDIR/logs/health.jsonl" | tr -d ' ')
+assert_eq "2" "$LINES" "two JSONL lines from two projects"
+PROJECTS=$(jq -s '[.[].project] | sort | join(",")' "$TMPDIR/logs/health.jsonl")
+assert_eq "\"ProjectA,ProjectB\"" "$PROJECTS" "project field uses project name (not agent name)"
+NOT_ORCHESTRATOR=$(jq -s '[.[] | select(.project=="orchestrator")] | length' "$TMPDIR/logs/health.jsonl")
+assert_eq "0" "$NOT_ORCHESTRATOR" "agent.yaml name not leaked into project field"
+
+# --- Test 13: --source skips projects with no endpoints silently ---
+echo "## Test 13: --source skips no-endpoints projects without warning"
+reset_logs
+cat > "$TMPDIR/memory/projects.yaml" <<EOF
+projects:
+  - name: WithEndpoints
+    endpoints:
+      - url: http://127.0.0.1:$PORT/200
+        type: http
+  - name: NoEndpoints
+  - name: EmptyEndpoints
+    endpoints: []
+EOF
+EXIT=0
+STDERR=$("$HEALTH" "$TMPDIR" --source memory/projects.yaml 2>&1 >/dev/null) || EXIT=$?
+assert_eq "0" "$EXIT" "exit 0 when one project endpointed and others not"
+LINES=$(wc -l < "$TMPDIR/logs/health.jsonl" | tr -d ' ')
+assert_eq "1" "$LINES" "only the endpointed project is probed"
+ONLY=$(jq -r '.project' "$TMPDIR/logs/health.jsonl")
+assert_eq "WithEndpoints" "$ONLY" "logged project is the one with endpoints"
+# Stderr must be silent for skipped projects (no warning per AC #3).
+SKIPPED_WARN=$(echo "$STDERR" | grep -ic "noendpoints\|skipped\|skipping" || true)
+assert_eq "0" "$SKIPPED_WARN" "no warning for projects without endpoints"
+
+# --- Test 14: --source malformed YAML — exit 1 with clear error ---
+echo "## Test 14: --source malformed projects.yaml — exit 1, clear error"
+reset_logs
+cat > "$TMPDIR/memory/projects.yaml" <<'EOF'
+projects:
+  - name: Bad
+  -- this is not valid yaml :: at all
+EOF
+EXIT=0
+STDERR=$("$HEALTH" "$TMPDIR" --source memory/projects.yaml 2>&1 >/dev/null) || EXIT=$?
+assert_eq "1" "$EXIT" "exit 1 on malformed source yaml"
+assert_contains "$STDERR" "Failed to parse|PARSE_ERROR" "error message indicates parse failure"
+
+# --- Test 14b: --source where projects entries have wrong shape ---
+echo "## Test 14b: --source with non-mapping project entries — exit 1"
+reset_logs
+cat > "$TMPDIR/memory/projects.yaml" <<EOF
+projects:
+  - just-a-string
+EOF
+EXIT=0
+STDERR=$("$HEALTH" "$TMPDIR" --source memory/projects.yaml 2>&1 >/dev/null) || EXIT=$?
+assert_eq "1" "$EXIT" "exit 1 when projects entry is not a mapping"
+assert_contains "$STDERR" "Failed to parse|each project must be a mapping" "error names the structural problem"
+
+# --- Test 15: --source nonexistent file — exit 2 ---
+echo "## Test 15: --source nonexistent file — exit 2"
+reset_logs
+EXIT=0
+STDERR=$("$HEALTH" "$TMPDIR" --source memory/missing.yaml 2>&1 >/dev/null) || EXIT=$?
+assert_eq "2" "$EXIT" "exit 2 on nonexistent source file (config error)"
+assert_contains "$STDERR" "Source file not found" "error message names the missing file"
+
+# --- Test 16: --source + --threshold compose ---
+echo "## Test 16: --source + --threshold flags slow endpoint"
+reset_logs
+cat > "$TMPDIR/memory/projects.yaml" <<EOF
+projects:
+  - name: SlowProject
+    endpoints:
+      - url: http://127.0.0.1:$PORT/slow
+        type: http
+EOF
+EXIT=0
+"$HEALTH" "$TMPDIR" --source memory/projects.yaml --threshold 50 >/dev/null 2>&1 || EXIT=$?
+assert_eq "1" "$EXIT" "exit 1 when source endpoint exceeds threshold"
+LINE=$(head -n 1 "$TMPDIR/logs/health.jsonl")
+assert_eq "SlowProject" "$(echo "$LINE" | jq -r '.project')" "project field still uses project name with --threshold"
+assert_eq "false" "$(echo "$LINE" | jq -r '.ok')" "ok:false when slow endpoint exceeds threshold"
+
+# --- Test 17: --source with empty/missing projects key — exit 0 with warning ---
+echo "## Test 17: --source with no projects — exit 0 with warning"
+reset_logs
+cat > "$TMPDIR/memory/projects.yaml" <<EOF
+# no projects key
+some_other_field: irrelevant
+EOF
+EXIT=0
+STDERR=$("$HEALTH" "$TMPDIR" --source memory/projects.yaml 2>&1 >/dev/null) || EXIT=$?
+assert_eq "0" "$EXIT" "exit 0 when source has no projects"
+assert_contains "$STDERR" "No project endpoints" "warning printed when source has no project endpoints"
+
+# --- Test 18: --source path is relative to <agent-dir> ---
+echo "## Test 18: --source path resolved relative to agent-dir"
+reset_logs
+mkdir -p "$TMPDIR/custom-layout"
+cat > "$TMPDIR/custom-layout/services.yaml" <<EOF
+projects:
+  - name: Custom
+    endpoints:
+      - url: http://127.0.0.1:$PORT/200
+        type: http
+EOF
+EXIT=0
+"$HEALTH" "$TMPDIR" --source custom-layout/services.yaml >/dev/null 2>&1 || EXIT=$?
+assert_eq "0" "$EXIT" "exit 0 when --source points to non-default layout"
+LINES=$(wc -l < "$TMPDIR/logs/health.jsonl" | tr -d ' ')
+assert_eq "1" "$LINES" "single endpoint probed from custom layout"
+
+# --- Test 19: --source mode does not require agent.yaml ---
+echo "## Test 19: --source works even without agent.yaml"
+reset_logs
+NO_AGENT=$(mktemp -d)
+mkdir -p "$NO_AGENT/logs"
+mkdir -p "$NO_AGENT/memory"
+cat > "$NO_AGENT/memory/projects.yaml" <<EOF
+projects:
+  - name: Standalone
+    endpoints:
+      - url: http://127.0.0.1:$PORT/200
+        type: http
+EOF
+EXIT=0
+"$HEALTH" "$NO_AGENT" --source memory/projects.yaml >/dev/null 2>&1 || EXIT=$?
+assert_eq "0" "$EXIT" "exit 0 in --source mode without agent.yaml"
+ONLY=$(jq -r '.project' "$NO_AGENT/logs/health.jsonl")
+assert_eq "Standalone" "$ONLY" "project name correctly recorded"
+rm -rf "$NO_AGENT"
+
 echo ""
 echo "# Results: $PASS/$TESTS passed, $FAIL failed"
 [ $FAIL -eq 0 ]
