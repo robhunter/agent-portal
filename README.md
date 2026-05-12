@@ -151,6 +151,25 @@ Add `data/` to `.gitignore` so cycle writes don't pollute git history. For a loc
 
 `features.library.dataDir` (and similar per-feature path overrides) are resolved relative to `<agentDir>/<dataDir>`. With default `dataDir: "."` the absolute resolution is identical to the legacy layout, so no agent needs to change its config to keep working — opt in when you're ready.
 
+**Migrating an existing agent** (see [`instructions/data-layout.md`](instructions/data-layout.md) for the full guide):
+
+1. Set `"dataDir": "data"` in `portal.config.json`.
+2. `git mv` your data directories into `data/`:
+   ```bash
+   mkdir -p data
+   for d in logs journals memory content config input output uploads requests; do
+     [ -d "$d" ] && git mv "$d" "data/$d"
+   done
+   ```
+3. `git rm --cached -r data/`, then add `data/` to `.gitignore`.
+4. Update `CLAUDE.md` and `agent.yaml` path references (the framework doesn't read these — the model does).
+5. Smoke-test a respond cycle to confirm writes land at the new locations.
+
+The framework reads `dataDir` from `portal.config.json` and propagates it via three mechanisms:
+- **Node routes** call `dataPath(config, ...)` from `lib/helpers.js`
+- **Shell scripts** source `read-harness-config.sh` (exports `DATA_DIR`)
+- **Python scripts** (`memory-index.py`, `memory-search.py`) accept `--data-dir` or the `DATA_DIR` env var
+
 ### Features
 
 The `features` object controls which tabs and routes are enabled. Omit a key to disable it.
