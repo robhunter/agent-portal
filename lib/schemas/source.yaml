@@ -1,5 +1,6 @@
 # Source schema — defines the fields that agent-portal understands
-# for content sources in config/sources.yaml.
+# for content sources in <dataDir>/config/sources.yaml
+# (legacy layout: <agentDir>/config/sources.yaml).
 #
 # Agents may add additional fields beyond this schema. Unknown fields
 # pass through the API (GET /api/sources) but are not rendered in the
@@ -61,7 +62,7 @@ fields:
       Use the Archive.org thumbnail API: https://archive.org/services/img/{identifier}
       where {identifier} is the last path segment of the item URL.
 
-# File format: config/sources.yaml
+# File format: <dataDir>/config/sources.yaml (legacy: <agentDir>/config/sources.yaml)
 # ─────────────────────────────────
 # sources:
 #   - id: archive-org
