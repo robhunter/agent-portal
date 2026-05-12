@@ -122,6 +122,35 @@ Each agent has a `portal.config.json` with these fields:
 | `pidFile` | Path to portal PID file | `"/tmp/agent-coder-portal-server.pid"` |
 | `authors` | Map of author names to `{ color, bg }` for badge styling | See examples |
 
+### Optional
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `dataDir` | Subdirectory under `agentDir` where all framework-managed mutable state lives (`logs/`, `journals/`, `memory/`, `content/`, `config/`, `input/`, `output/`, `uploads/`, etc.). Operator-owned files (`CLAUDE.md`, `agent.yaml`, `today.md`, `roadmap.md`, `scripts/`, `skills/`) stay at `agentDir` regardless. Set to `"data"` to keep mutable state in a single directory that can be gitignored or mounted as a separate volume. | `"."` (everything at agentDir root — legacy layout) |
+
+**Recommended layout when `dataDir: "data"` is set:**
+
+```
+<agentDir>/
+├── CLAUDE.md              # operator-owned, code repo
+├── agent.yaml             # operator-owned, code repo
+├── portal.config.json     # operator-owned, code repo
+├── scripts/, skills/      # operator-owned, code repo
+└── data/                  # gitignored (or mounted volume in hosted)
+    ├── logs/
+    ├── journals/
+    ├── memory/
+    ├── content/items/
+    ├── config/
+    ├── input/feedback/
+    ├── output/
+    └── uploads/
+```
+
+Add `data/` to `.gitignore` so cycle writes don't pollute git history. For a local-rollback safety net, `git init` inside `data/` as a separate, non-pushed repo.
+
+`features.library.dataDir` (and similar per-feature path overrides) are resolved relative to `<agentDir>/<dataDir>`. With default `dataDir: "."` the absolute resolution is identical to the legacy layout, so no agent needs to change its config to keep working — opt in when you're ready.
+
 ### Features
 
 The `features` object controls which tabs and routes are enabled. Omit a key to disable it.
