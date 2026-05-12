@@ -137,6 +137,143 @@ describe('POST /api/sources/:id/deny', () => {
   });
 });
 
+describe('PATCH /api/sources/:id (notes)', () => {
+  function setup() {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sources-patch-'));
+    const configDir = path.join(tmpDir, 'config');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.copyFileSync(path.join(fixturesDir, 'config', 'sources.yaml'), path.join(configDir, 'sources.yaml'));
+    return tmpDir;
+  }
+
+  it('writes notes to sources.yaml', async () => {
+    const tmpDir = setup();
+    const { server } = createTestSvr(tmpDir);
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/sources/shady-torrents', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: 'only recommend from approved torrent uploaders' }),
+    });
+    assert.equal(status, 200);
+    assert.match(data.notes, /approved torrent uploaders/);
+
+    // Verify persisted
+    const yaml = require('js-yaml');
+    const written = yaml.load(fs.readFileSync(path.join(tmpDir, 'config', 'sources.yaml'), 'utf-8'));
+    const updated = written.sources.find(s => s.id === 'shady-torrents');
+    assert.match(updated.notes, /approved torrent uploaders/);
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('clears notes when given empty string', async () => {
+    const tmpDir = setup();
+    const { server } = createTestSvr(tmpDir);
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    // First set
+    await fetchJSON(port, '/api/sources/shady-torrents', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: 'something' }),
+    });
+    // Then clear
+    const { status, data } = await fetchJSON(port, '/api/sources/shady-torrents', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: '   ' }),
+    });
+    assert.equal(status, 200);
+    assert.equal(data.notes, null);
+
+    const yaml = require('js-yaml');
+    const written = yaml.load(fs.readFileSync(path.join(tmpDir, 'config', 'sources.yaml'), 'utf-8'));
+    const updated = written.sources.find(s => s.id === 'shady-torrents');
+    assert.equal(updated.notes, undefined, 'notes should be removed from the YAML when blank');
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('returns 404 for unknown source id', async () => {
+    const tmpDir = setup();
+    const { server } = createTestSvr(tmpDir);
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status } = await fetchJSON(port, '/api/sources/nonexistent', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: 'x' }),
+    });
+    assert.equal(status, 404);
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('rejects invalid JSON body', async () => {
+    const tmpDir = setup();
+    const { server } = createTestSvr(tmpDir);
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/sources/shady-torrents', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not-json-{',
+    });
+    assert.equal(status, 400);
+    assert.match(data.error, /Invalid JSON/);
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('rejects non-string notes value', async () => {
+    const tmpDir = setup();
+    const { server } = createTestSvr(tmpDir);
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/sources/shady-torrents', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: 42 }),
+    });
+    assert.equal(status, 400);
+    assert.match(data.error, /must be a string/);
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('GET /api/sources surfaces the saved notes', async () => {
+    const tmpDir = setup();
+    const { server } = createTestSvr(tmpDir);
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    await fetchJSON(port, '/api/sources/shady-torrents', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: 'only the $4.99 shelf' }),
+    });
+    const { status, data } = await fetchJSON(port, '/api/sources');
+    assert.equal(status, 200);
+    const updated = data.find(s => s.id === 'shady-torrents');
+    assert.match(updated.notes, /\$4\.99 shelf/);
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+});
+
 // --- Preferences (per-category) ---
 
 describe('GET /api/preferences', () => {
