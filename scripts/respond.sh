@@ -22,7 +22,8 @@ fi
 # Read agent config
 eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 
-# Read harness config from portal.config.json (defaults to claude-code)
+# Read harness + data dir config from portal.config.json
+# (defaults: harness=claude-code, DATA_DIR=".")
 eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR")"
 
 # Mutex — prevent overlapping with a full cycle
@@ -35,8 +36,8 @@ fi
 rm -f "${AGENT_LOCK_FILE}.starting"
 
 CYCLE_TS="$(date +%Y%m%d-%H%M)"
-CYCLE_LOG="logs/cycles/${CYCLE_TS}-respond.log"
-mkdir -p logs/cycles
+CYCLE_LOG="$DATA_DIR/logs/cycles/${CYCLE_TS}-respond.log"
+mkdir -p "$DATA_DIR/logs/cycles"
 
 CYCLE_START_EPOCH=$(date +%s)
 
@@ -116,6 +117,6 @@ fi
 CYCLE_END_EPOCH=$(date +%s)
 CYCLE_DURATION_S=$((CYCLE_END_EPOCH - CYCLE_START_EPOCH))
 CYCLE_DURATION_M=$((CYCLE_DURATION_S / 60))
-echo "{\"ts\":\"$(date -Iseconds)\",\"type\":\"cycle_end\",\"summary\":\"Respond cycle complete\",\"duration_s\":${CYCLE_DURATION_S},\"duration_m\":${CYCLE_DURATION_M}}" >> "$AGENT_DIR/logs/events.jsonl"
+echo "{\"ts\":\"$(date -Iseconds)\",\"type\":\"cycle_end\",\"summary\":\"Respond cycle complete\",\"duration_s\":${CYCLE_DURATION_S},\"duration_m\":${CYCLE_DURATION_M}}" >> "$AGENT_DIR/$DATA_DIR/logs/events.jsonl"
 
 bash "$FRAMEWORK_DIR/scripts/commit.sh" "$AGENT_DIR" "respond cycle"

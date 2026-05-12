@@ -20,13 +20,19 @@ FRAMEWORK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 AGENT_DIR="${1:?Usage: consolidate-memory.sh <agent-dir> [--force]}"
 FORCE="${2:-}"
 
+# Resolve DATA_DIR from portal.config.json (defaults to ".")
+if [ -z "$DATA_DIR" ] && [ -f "$AGENT_DIR/portal.config.json" ]; then
+  eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR" 2>/dev/null | grep '^export DATA_DIR=')"
+fi
+DATA_DIR="${DATA_DIR:-.}"
+
 # ── PATHS ──
 
-CONFIG_FILE="$AGENT_DIR/memory/config.yaml"
-INSIGHTS_FILE="$AGENT_DIR/memory/consolidated-insights.yaml"
-OPERATIONAL_FILE="$AGENT_DIR/memory/operational.yaml"
-EVENTS_FILE="$AGENT_DIR/logs/events.jsonl"
-JOURNALS_DIR="$AGENT_DIR/journals"
+CONFIG_FILE="$AGENT_DIR/$DATA_DIR/memory/config.yaml"
+INSIGHTS_FILE="$AGENT_DIR/$DATA_DIR/memory/consolidated-insights.yaml"
+OPERATIONAL_FILE="$AGENT_DIR/$DATA_DIR/memory/operational.yaml"
+EVENTS_FILE="$AGENT_DIR/$DATA_DIR/logs/events.jsonl"
+JOURNALS_DIR="$AGENT_DIR/$DATA_DIR/journals"
 
 # ── CONFIG ──
 
