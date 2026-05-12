@@ -101,3 +101,29 @@ Symlinks would have let the framework continue using bare paths like `logs/` whi
 - `commit.sh` still runs `git add -A` — gitignoring `data/` is what keeps cycle writes out of the code repo.
 - Agent prompts (`CLAUDE.md`, `agent.yaml`) are not auto-rewritten; the framework doesn't read them. You update those when you migrate.
 - Other agents that don't set `dataDir` keep working with no changes.
+
+## Content publishing gate (`publish-content.sh`)
+
+For agents that have a `features.library` and a `<dataDir>/config/sources.yaml`, the framework provides a validation gate to prevent the agent from publishing recommendations that link to unapproved or fabricated URLs:
+
+```bash
+bash ../agent-portal/scripts/publish-content.sh <agent-dir> <yaml-path> [--dry-run] [--skip-fetch]
+```
+
+Pass scenarios → moves the draft into `<dataDir>/content/items/<id>.yaml`.
+Fail scenarios → moves the draft into `<dataDir>/content/rejected/<id>.yaml` with a `_validation:` block listing every error.
+
+### Two validation layers
+
+1. **Host allowlist.** Every URL in `source_url` and `sources[].url` must trace to an approved source's host. Sources declare hosts via a `hosts:` field in `sources.yaml`; the validator falls back to the hostname parsed from `url:` for backwards compat. Pending sources (`status: pending`) are rejected — only `status: approved` qualifies.
+2. **Live fetch.** HEAD (GET fallback on 405) with a 10s timeout per URL, 2 retries on connection errors. 2xx/3xx = pass; anything else = fail. Cover URLs are *not* validated — they often come from third-party CDNs and aren't the safety concern. Only navigational URLs are checked.
+
+### Agent integration
+
+The agent's `CLAUDE.md` should instruct: write content YAML to a scratch path (e.g. `/tmp/item-<id>.yaml`), then call `publish-content.sh`. Never `Write` into `<dataDir>/content/items/` directly — the gate cannot enforce against bypasses.
+
+When `publish-content.sh` exits non-zero, the agent should read the `_validation` block in the quarantined file, fix the offending URLs (or skip the item entirely), and retry. The `--dry-run` flag lets the agent self-check without touching the filesystem.
+
+### Backwards compat
+
+Agents that don't have `features.library` configured can ignore the gate. The script reads `<dataDir>/config/sources.yaml`; if that file is absent, validation fails with exit code 2 and a clear error pointing at the missing registry.
