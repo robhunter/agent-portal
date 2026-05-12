@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { createServer, startServer } = require('./lib/server');
 const { buildHTML } = require('./lib/ui');
+const { dataPath } = require('./lib/helpers');
 
 // Load config from CLI argument
 const configPath = process.argv[2];
@@ -28,12 +29,11 @@ if (config.agentDir && !path.isAbsolute(config.agentDir)) {
   config.agentDir = path.resolve(path.dirname(resolvedConfigPath), config.agentDir);
 }
 
-// Ensure required directories exist
+// Ensure required directories exist under the configured data dir
+// (defaults to agentDir when dataDir is unset or "." — backwards compatible).
 const agentDir = config.agentDir;
 if (agentDir) {
-  const journalsDir = path.join(agentDir, 'journals');
-  const logsDir = path.join(agentDir, 'logs');
-  for (const dir of [journalsDir, logsDir]) {
+  for (const dir of [dataPath(config, 'journals'), dataPath(config, 'logs')]) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
