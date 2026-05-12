@@ -36,21 +36,22 @@ exec 200>"$AGENT_LOCK_FILE"
 flock -w 120 200 || { echo "Agent busy — cycle didn't complete in 2min"; exit 1; }
 
 # Ensure conversation log exists
-touch logs/conversation.jsonl
+mkdir -p "$DATA_DIR/logs"
+touch "$DATA_DIR/logs/conversation.jsonl"
 
 # Append human message to conversation buffer
-echo "{\"ts\":\"$(date -Iseconds)\",\"role\":\"human\",\"text\":$(echo "$MESSAGE" | jq -Rs .)}" >> logs/conversation.jsonl
+echo "{\"ts\":\"$(date -Iseconds)\",\"role\":\"human\",\"text\":$(echo "$MESSAGE" | jq -Rs .)}" >> $DATA_DIR/logs/conversation.jsonl
 
 # Build recent conversation context (last 20 messages)
-RECENT_CONVO=$(tail -20 logs/conversation.jsonl | jq -r '"[\(.role)] \(.text)"')
+RECENT_CONVO=$(tail -20 $DATA_DIR/logs/conversation.jsonl | jq -r '"[\(.role)] \(.text)"')
 
 # Log cycle start
 bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" responsive_cycle "Telegram message received"
 
 # Cycle logging (matching wake.sh pattern)
 CYCLE_TS="$(date +%Y%m%d-%H%M)"
-CYCLE_LOG="logs/cycles/${CYCLE_TS}-respond.log"
-mkdir -p logs/cycles
+CYCLE_LOG="$DATA_DIR/logs/cycles/${CYCLE_TS}-respond.log"
+mkdir -p "$DATA_DIR/logs/cycles"
 
 echo "Running $HARNESS_TYPE..."
 
@@ -84,10 +85,10 @@ set +e
 case "$HARNESS_TYPE" in
   claude-code)
     # Claude Code: explicit session management via --resume / --session-id
-    SESSION_FILE="logs/telegram_session_id"
+    SESSION_FILE="$DATA_DIR/logs/telegram_session_id"
     SESSION_ARGS=""
 
-    PREV_HUMAN_TS=$(grep '"role":"human"' logs/conversation.jsonl | tail -2 | head -1 | jq -r '.ts // ""')
+    PREV_HUMAN_TS=$(grep '"role":"human"' $DATA_DIR/logs/conversation.jsonl | tail -2 | head -1 | jq -r '.ts // ""')
     if [ -n "$PREV_HUMAN_TS" ] && [ -f "$SESSION_FILE" ]; then
       PREV_EPOCH=$(date -d "$PREV_HUMAN_TS" +%s 2>/dev/null || echo 0)
       NOW_EPOCH=$(date +%s)
@@ -110,7 +111,7 @@ case "$HARNESS_TYPE" in
       echo "$FULL_PROMPT" | claude --print --effort max \
         --allowedTools "Bash" "Edit" "Write" "Read" "Glob" "Grep" "WebSearch" "WebFetch" \
         "$@" \
-        2>>logs/respond_errors.log
+        2>>"$DATA_DIR/logs/respond_errors.log"
     }
 
     if echo "$SESSION_ARGS" | grep -q -- '--resume'; then
@@ -134,13 +135,13 @@ case "$HARNESS_TYPE" in
   letta-code)
     # Letta Code: persistent agent memory provides session continuity.
     # --name targets the right agent; each invocation auto-creates a fresh conversation.
-    RESPONSE=$(echo "$FULL_PROMPT" | $HARNESS_CMD $HARNESS_EXTRA_FLAGS 2>>logs/respond_errors.log)
+    RESPONSE=$(echo "$FULL_PROMPT" | $HARNESS_CMD $HARNESS_EXTRA_FLAGS 2>>"$DATA_DIR/logs/respond_errors.log")
     HARNESS_EXIT=$?
     ;;
 
   *)
     # Script or unknown harness: no session management
-    RESPONSE=$(echo "$FULL_PROMPT" | $HARNESS_CMD $HARNESS_EXTRA_FLAGS 2>>logs/respond_errors.log)
+    RESPONSE=$(echo "$FULL_PROMPT" | $HARNESS_CMD $HARNESS_EXTRA_FLAGS 2>>"$DATA_DIR/logs/respond_errors.log")
     HARNESS_EXIT=$?
     ;;
 esac
@@ -164,7 +165,7 @@ fi
 echo "Sending response..."
 
 # Dedup guard — skip if identical to the last agent message within 60 seconds
-LAST_AGENT_MSG=$(grep '"role":"agent"' logs/conversation.jsonl | tail -1)
+LAST_AGENT_MSG=$(grep '"role":"agent"' $DATA_DIR/logs/conversation.jsonl | tail -1)
 LAST_AGENT_TEXT=$(echo "$LAST_AGENT_MSG" | jq -r '.text // ""')
 LAST_AGENT_TS=$(echo "$LAST_AGENT_MSG" | jq -r '.ts // ""')
 
@@ -180,7 +181,7 @@ if [ "$RESPONSE" = "$LAST_AGENT_TEXT" ] && [ -n "$LAST_AGENT_TS" ]; then
 fi
 
 # Append agent response to conversation buffer
-echo "{\"ts\":\"$(date -Iseconds)\",\"role\":\"agent\",\"text\":$(echo "$RESPONSE" | jq -Rs .)}" >> logs/conversation.jsonl
+echo "{\"ts\":\"$(date -Iseconds)\",\"role\":\"agent\",\"text\":$(echo "$RESPONSE" | jq -Rs .)}" >> $DATA_DIR/logs/conversation.jsonl
 
 if [ "$DUPLICATE" = "false" ]; then
   bash "$FRAMEWORK_DIR/scripts/notify.sh" "$RESPONSE"

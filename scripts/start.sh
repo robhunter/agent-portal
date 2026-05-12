@@ -19,8 +19,14 @@ fi
 # Read agent config
 eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 
-LOG_FILE="logs/supervisor.log"
-mkdir -p logs
+# Resolve DATA_DIR from portal.config.json (defaults to ".")
+if [ -z "$DATA_DIR" ] && [ -f "$AGENT_DIR/portal.config.json" ]; then
+  eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR" 2>/dev/null | grep '^export DATA_DIR=')"
+fi
+DATA_DIR="${DATA_DIR:-.}"
+
+LOG_FILE="$DATA_DIR/logs/supervisor.log"
+mkdir -p "$DATA_DIR/logs"
 
 log() {
   echo "$(date -Iseconds) [supervisor] $*" >> "$LOG_FILE"

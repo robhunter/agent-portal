@@ -3,9 +3,17 @@
 # Usage: clear-done-todos.sh <agent-dir>
 # Run at end of cycle (post-cycle hook) to clear completed todos.
 # Only acts if human_todos.md exists and has checked items.
+# Respects portal.config.json's dataDir (default ".").
 
 AGENT_DIR="${1:-.}"
-TODOS_FILE="$AGENT_DIR/human_todos.md"
+FRAMEWORK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+if [ -z "$DATA_DIR" ] && [ -f "$AGENT_DIR/portal.config.json" ]; then
+  eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR" 2>/dev/null | grep '^export DATA_DIR=')"
+fi
+DATA_DIR="${DATA_DIR:-.}"
+
+TODOS_FILE="$AGENT_DIR/$DATA_DIR/human_todos.md"
 
 if [ ! -f "$TODOS_FILE" ]; then
   exit 0

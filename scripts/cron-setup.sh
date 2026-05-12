@@ -14,13 +14,19 @@ cd "$AGENT_DIR"
 # Read agent config
 eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 
+# Resolve DATA_DIR from portal.config.json (defaults to ".")
+if [ -z "$DATA_DIR" ] && [ -f "$AGENT_DIR/portal.config.json" ]; then
+  eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR" 2>/dev/null | grep '^export DATA_DIR=')"
+fi
+DATA_DIR="${DATA_DIR:-.}"
+
 # Environment sourcing prefix for cron jobs:
 # - Sandcat profile scripts (env vars + NODE_EXTRA_CA_CERTS)
 # - nvm so claude/node are on PATH
 CRON_ENV='for f in /etc/profile.d/sandcat-*.sh; do [ -r "$f" ] && . "$f"; done; export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" &&'
 
-# Main wake entry from agent.yaml
-WAKE_LINE="${AGENT_CRON_SCHEDULE} root ${CRON_ENV} cd ${AGENT_DIR} && bash ${FRAMEWORK_DIR}/scripts/wake.sh ${AGENT_DIR} >> logs/cycles/cron-wake.log 2>&1"
+# Main wake entry from agent.yaml — cron-wake.log lives under <DATA_DIR>/logs/cycles
+WAKE_LINE="${AGENT_CRON_SCHEDULE} root ${CRON_ENV} cd ${AGENT_DIR} && bash ${FRAMEWORK_DIR}/scripts/wake.sh ${AGENT_DIR} >> ${DATA_DIR}/logs/cycles/cron-wake.log 2>&1"
 
 # Build all cron lines
 CRON_LINES="$WAKE_LINE"

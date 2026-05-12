@@ -15,7 +15,9 @@ FRAMEWORK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 AGENT_DIR="${1:-$(pwd)}"
 cd "$AGENT_DIR"
 
-# Step log — written before events.jsonl so we can diagnose startup failures
+# DATA_DIR is resolved later from portal.config.json via read-harness-config.sh.
+# Until then, write the early step log at the legacy path. After we read the
+# config, we relocate STEP_LOG into <DATA_DIR>/logs/cycles/ if needed.
 STEP_LOG="logs/cycles/wake-steps.log"
 mkdir -p logs/cycles
 step() {
@@ -42,9 +44,22 @@ fi
 eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 step "config loaded (name=$AGENT_NAME)"
 
-# Read harness config from portal.config.json (defaults to claude-code)
+# Read harness + data dir config from portal.config.json
+# (defaults: harness=claude-code, DATA_DIR=".")
 eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR")"
-step "harness config loaded (type=$HARNESS_TYPE)"
+step "harness config loaded (type=$HARNESS_TYPE, DATA_DIR=$DATA_DIR)"
+
+# Now that DATA_DIR is known, relocate STEP_LOG under the data dir for
+# the remainder of the cycle. Migrate any early entries written before
+# config was loaded.
+if [ "$DATA_DIR" != "." ]; then
+  NEW_STEP_LOG="$DATA_DIR/logs/cycles/wake-steps.log"
+  mkdir -p "$(dirname "$NEW_STEP_LOG")"
+  if [ -f "$STEP_LOG" ] && [ ! -f "$NEW_STEP_LOG" ]; then
+    cat "$STEP_LOG" >> "$NEW_STEP_LOG"
+  fi
+  STEP_LOG="$NEW_STEP_LOG"
+fi
 
 # Set timezone if configured
 if [ -n "$AGENT_TIMEZONE" ]; then
@@ -183,7 +198,8 @@ fi
 
 # Track cycle timing
 CYCLE_TS="$(date +%Y%m%d-%H%M)"
-CYCLE_LOG="logs/cycles/${CYCLE_TS}.log"
+CYCLE_LOG="$DATA_DIR/logs/cycles/${CYCLE_TS}.log"
+mkdir -p "$DATA_DIR/logs/cycles"
 CYCLE_START_EPOCH=$(date +%s)
 
 # Log cycle start
@@ -234,7 +250,8 @@ step "pre-cycle hooks done"
 # ── HARNESS AUTH CHECK ──
 
 # Record auth confirmation timestamp (non-fatal)
-AUTH_CONFIRMED_FILE="$AGENT_DIR/logs/.auth-last-confirmed"
+AUTH_CONFIRMED_FILE="$AGENT_DIR/$DATA_DIR/logs/.auth-last-confirmed"
+mkdir -p "$(dirname "$AUTH_CONFIRMED_FILE")"
 case "$HARNESS_TYPE" in
   claude-code)
     if claude auth status --json 2>/dev/null | grep -q '"loggedIn": *true'; then
@@ -311,7 +328,12 @@ bash "$FRAMEWORK_DIR/scripts/consolidate-memory.sh" "$AGENT_DIR" 2>&1 | while IF
   step "consolidation: skipped or failed (non-fatal)"
 
 # Dispatch pending notification
-NOTIFY_FILE="pending_notification.txt"
+# Agents write pending_notification.txt under the data dir (current state)
+# or at the agent root (legacy state). Check both for backwards compat.
+NOTIFY_FILE="$DATA_DIR/pending_notification.txt"
+if [ ! -s "$NOTIFY_FILE" ] && [ -s "pending_notification.txt" ]; then
+  NOTIFY_FILE="pending_notification.txt"
+fi
 if [ -s "$NOTIFY_FILE" ]; then
   step "sending notification"
   bash "$FRAMEWORK_DIR/scripts/notify.sh" "$(cat "$NOTIFY_FILE")"
@@ -322,7 +344,7 @@ fi
 CYCLE_END_EPOCH=$(date +%s)
 CYCLE_DURATION_S=$((CYCLE_END_EPOCH - CYCLE_START_EPOCH))
 CYCLE_DURATION_M=$((CYCLE_DURATION_S / 60))
-echo "{\"ts\":\"$(date -Iseconds)\",\"type\":\"cycle_end\",\"summary\":\"Cycle complete\",\"duration_s\":${CYCLE_DURATION_S},\"duration_m\":${CYCLE_DURATION_M}}" >> "$AGENT_DIR/logs/events.jsonl"
+echo "{\"ts\":\"$(date -Iseconds)\",\"type\":\"cycle_end\",\"summary\":\"Cycle complete\",\"duration_s\":${CYCLE_DURATION_S},\"duration_m\":${CYCLE_DURATION_M}}" >> "$AGENT_DIR/$DATA_DIR/logs/events.jsonl"
 step "cycle complete (${CYCLE_DURATION_M}m ${CYCLE_DURATION_S}s)"
 
 # Cycle succeeded — remove failure marker and update framework last-known-good

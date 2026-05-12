@@ -154,12 +154,24 @@ def format_results(results: list[dict]) -> str:
 
 def main():
     if len(sys.argv) < 2:
-        print('Usage: memory-search.py "query text" [/path/to/agent-dir]', file=sys.stderr)
+        print('Usage: memory-search.py "query text" [/path/to/agent-dir] [--data-dir DATA_DIR]', file=sys.stderr)
         sys.exit(1)
 
     query = sys.argv[1]
-    agent_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else Path.cwd()
-    db_path = agent_dir / "memory" / "memory.db"
+    # Positional agent_dir is the first non-flag arg after the query
+    args = sys.argv[2:]
+    agent_dir = Path(args[0]) if args and not args[0].startswith("--") else Path.cwd()
+
+    # Resolve data-dir (CLI flag wins; else $DATA_DIR; else ".")
+    data_dir = "."
+    if "--data-dir" in args:
+        idx = args.index("--data-dir")
+        if idx + 1 < len(args):
+            data_dir = args[idx + 1]
+    else:
+        data_dir = os.environ.get("DATA_DIR", ".")
+
+    db_path = agent_dir / data_dir / "memory" / "memory.db"
 
     if not db_path.exists():
         print(f"Memory database not found at {db_path}. Run memory-index.py first.", file=sys.stderr)

@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Index journal entries and events into SQLite for semantic search.
 
-Usage: memory-venv/bin/python scripts/memory-index.py /path/to/agent-dir
+Usage: memory-venv/bin/python scripts/memory-index.py /path/to/agent-dir [--data-dir DATA_DIR]
 
 Parses journal markdown files and events.jsonl, generates embeddings via
 fastembed (nomic-embed-text-v1.5), and stores in SQLite with FTS5 for
 keyword search and numpy-based vector similarity. Incremental: only
 indexes new entries since last run.
+
+--data-dir defaults to "." (legacy layout — journals/, logs/, memory/ at
+agent-dir root). Set to "data" for the dataDir layout where they live
+under <agent-dir>/data/. The DATA_DIR environment variable is honored
+when --data-dir is absent (matches what read-harness-config.sh exports).
 """
 
 import json
@@ -173,13 +178,24 @@ def set_last_indexed(conn: sqlite3.Connection, key: str, value: str):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: memory-index.py /path/to/agent-dir", file=sys.stderr)
+        print("Usage: memory-index.py /path/to/agent-dir [--data-dir DATA_DIR]", file=sys.stderr)
         sys.exit(1)
 
     agent_dir = Path(sys.argv[1])
-    journal_dir = agent_dir / "journals"
-    events_path = agent_dir / "logs" / "events.jsonl"
-    memory_dir = agent_dir / "memory"
+
+    # Resolve data-dir (CLI flag wins; else $DATA_DIR; else ".")
+    data_dir = "."
+    if "--data-dir" in sys.argv:
+        idx = sys.argv.index("--data-dir")
+        if idx + 1 < len(sys.argv):
+            data_dir = sys.argv[idx + 1]
+    else:
+        data_dir = os.environ.get("DATA_DIR", ".")
+
+    root = agent_dir / data_dir
+    journal_dir = root / "journals"
+    events_path = root / "logs" / "events.jsonl"
+    memory_dir = root / "memory"
     memory_dir.mkdir(exist_ok=True)
     db_path = memory_dir / "memory.db"
 
