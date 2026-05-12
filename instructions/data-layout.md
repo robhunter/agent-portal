@@ -113,10 +113,21 @@ bash ../agent-portal/scripts/publish-content.sh <agent-dir> <yaml-path> [--dry-r
 Pass scenarios → moves the draft into `<dataDir>/content/items/<id>.yaml`.
 Fail scenarios → moves the draft into `<dataDir>/content/rejected/<id>.yaml` with a `_validation:` block listing every error.
 
-### Two validation layers
+### Validation layers
 
-1. **Host allowlist.** Every URL in `source_url` and `sources[].url` must trace to an approved source's host. Sources declare hosts via a `hosts:` field in `sources.yaml`; the validator falls back to the hostname parsed from `url:` for backwards compat. Pending sources (`status: pending`) are rejected — only `status: approved` qualifies.
-2. **Live fetch.** HEAD (GET fallback on 405) with a 10s timeout per URL, 2 retries on connection errors. 2xx/3xx = pass; anything else = fail. Cover URLs are *not* validated — they often come from third-party CDNs and aren't the safety concern. Only navigational URLs are checked.
+**Source URLs (`source_url` and every `sources[].url`)** — these are where the user consumes the content. Both checks apply:
+
+1. **Host allowlist.** Every URL must trace to an approved source's host. Sources declare hosts via a `hosts:` field in `sources.yaml`; the validator falls back to the hostname parsed from `url:` for backwards compat. Pending sources (`status: pending`) are rejected — only `status: approved` qualifies.
+2. **Live fetch.** HEAD (GET fallback on 405) with a 10s timeout per URL, 2 retries on connection errors. 2xx/3xx = pass; anything else = fail.
+
+**Reference URLs (`references[].url`, optional)** — supplemental informational links that complement the recommendation (Wikipedia, IMDb, Letterboxd reviews, etc.). They are NOT places where the user consumes content. Only the live-fetch check applies:
+
+- **No host allowlist** — references can come from any host. They're not a recommendation surface; they're context.
+- **Live fetch** — same liveness check as source URLs (2xx/3xx required).
+
+A reference that 404s is rejected; a reference on an unfamiliar host is accepted as long as it returns 200.
+
+**Cover URLs (`metadata.cover_url`)** — not validated. Often served from third-party CDNs that aren't sources.
 
 ### Agent integration
 

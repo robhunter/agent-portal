@@ -145,6 +145,75 @@ echo "## Test 8: honors DATA_DIR env override"
 DATA_DIR=data bash "$SCRIPT" "$TMP" "$TMP/draft7-missing.yaml" 2>/tmp/pc-8.err && true
 grep -q "Failed to read draft" /tmp/pc-8.err && ok "DATA_DIR env propagates to the node script" || fail "DATA_DIR not honored"
 
+echo "## Test 9: references[] with a non-approved host passes (no host check on refs)"
+cat > "$TMP/draft-refs.yaml" <<EOF
+id: refs-good
+title: Refs Test
+category: comics
+format: cbz
+source: test-source
+source_url: http://127.0.0.1:$PORT/200
+status: linked
+sources:
+  - name: Test
+    url: http://127.0.0.1:$PORT/200
+    type: downloadable
+references:
+  - name: Wikipedia (not in approved sources)
+    url: http://127.0.0.1:$PORT/200
+EOF
+if bash "$SCRIPT" "$TMP" "$TMP/draft-refs.yaml" > /tmp/pc-9.out 2> /tmp/pc-9.err; then
+  ok "references on non-approved host accepted"
+else
+  fail "refs rejected: $(cat /tmp/pc-9.err)"
+fi
+
+echo "## Test 10: references[] with a dead URL → quarantined"
+cat > "$TMP/draft-refs-dead.yaml" <<EOF
+id: refs-dead
+title: Refs Dead Test
+category: comics
+format: cbz
+source: test-source
+source_url: http://127.0.0.1:$PORT/200
+status: linked
+sources:
+  - name: Test
+    url: http://127.0.0.1:$PORT/200
+    type: downloadable
+references:
+  - name: Dead reference
+    url: http://127.0.0.1:$PORT/404
+EOF
+if bash "$SCRIPT" "$TMP" "$TMP/draft-refs-dead.yaml" > /tmp/pc-10.out 2> /tmp/pc-10.err; then
+  fail "expected reject on dead reference URL"
+else
+  ok "exit nonzero on dead reference URL"
+fi
+[ -f "$TMP/data/content/rejected/refs-dead.yaml" ] && ok "quarantined under rejected/" || fail "missing from rejected/"
+grep -q "references\[0\]" "$TMP/data/content/rejected/refs-dead.yaml" && ok "_validation block names references[0]" || fail "no references field in validation block"
+
+echo "## Test 11: empty references[] is fine"
+cat > "$TMP/draft-empty-refs.yaml" <<EOF
+id: empty-refs
+title: Empty Refs
+category: comics
+format: cbz
+source: test-source
+source_url: http://127.0.0.1:$PORT/200
+status: linked
+sources:
+  - name: Test
+    url: http://127.0.0.1:$PORT/200
+    type: downloadable
+references: []
+EOF
+if bash "$SCRIPT" "$TMP" "$TMP/draft-empty-refs.yaml" > /tmp/pc-11.out 2> /tmp/pc-11.err; then
+  ok "empty references[] accepted"
+else
+  fail "empty refs rejected: $(cat /tmp/pc-11.err)"
+fi
+
 # Cleanup
 rm -rf "$TMP"
 echo ""
