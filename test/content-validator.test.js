@@ -240,6 +240,88 @@ describe('validateItem — skipFetch mode', () => {
   });
 });
 
+describe('validateItem — references[] (supplemental links)', () => {
+  it('passes when references[] is absent', async () => {
+    const item = makeItem();
+    delete item.references;
+    const r = await validateItem(item, makeSources(), { fetchTimeoutMs: 2000 });
+    assert.equal(r.ok, true, JSON.stringify(r.errors));
+  });
+
+  it('passes when references[] is empty array', async () => {
+    const r = await validateItem(makeItem({ references: [] }), makeSources(), { fetchTimeoutMs: 2000 });
+    assert.equal(r.ok, true, JSON.stringify(r.errors));
+  });
+
+  it('passes when references[] is on a host NOT in approved sources (no host check)', async () => {
+    // example.com is not in the approved sources list — references should still pass host-wise
+    const r = await validateItem(
+      makeItem({ references: [{ name: 'Wikipedia', url: `${base}/200` }] }),
+      makeSources({ hosts: ['some-other-host'] }), // approved hosts doesn't include 127.0.0.1
+      { fetchTimeoutMs: 2000, skipFetch: true }
+    );
+    // source_url is on 127.0.0.1 which is NOT in approved hosts → expect a source_url failure
+    // BUT references should not contribute a host error
+    const refErrors = r.errors.filter(e => e.field && e.field.startsWith('references'));
+    assert.equal(refErrors.length, 0, 'references should not trigger host-allowlist errors');
+  });
+
+  it('rejects references[].url that returns 404', async () => {
+    const r = await validateItem(
+      makeItem({ references: [{ name: 'Wikipedia', url: `${base}/404` }] }),
+      makeSources(),
+      { fetchTimeoutMs: 2000 }
+    );
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some(e => e.field === 'references[0].url' && /HTTP 404/.test(e.reason)));
+  });
+
+  it('rejects references[].url that times out', async () => {
+    const r = await validateItem(
+      makeItem({ references: [{ name: 'Slow', url: `${base}/slow` }] }),
+      makeSources(),
+      { fetchTimeoutMs: 200, fetchRetries: 0 }
+    );
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some(e => e.field === 'references[0].url' && /timeout/i.test(e.reason)));
+  });
+
+  it('reports both source and reference failures', async () => {
+    const r = await validateItem(
+      makeItem({
+        source_url: `${base}/500`,
+        sources: [{ name: 'Test', url: `${base}/500`, type: 'downloadable' }],
+        references: [{ name: 'Wikipedia', url: `${base}/404` }],
+      }),
+      makeSources(),
+      { fetchTimeoutMs: 2000 }
+    );
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some(e => e.field === 'source_url' && /HTTP 500/.test(e.reason)));
+    assert.ok(r.errors.some(e => e.field === 'references[0].url' && /HTTP 404/.test(e.reason)));
+  });
+
+  it('flags invalid URL in references[]', async () => {
+    const r = await validateItem(
+      makeItem({ references: [{ name: 'Broken', url: 'not a url' }] }),
+      makeSources(),
+      { skipFetch: true }
+    );
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some(e => e.field === 'references[0].url' && /invalid URL/.test(e.reason)));
+  });
+
+  it('skipFetch bypasses reference liveness too', async () => {
+    const r = await validateItem(
+      makeItem({ references: [{ name: 'Wikipedia', url: `${base}/404` }] }),
+      makeSources(),
+      { skipFetch: true }
+    );
+    // /404 host (127.0.0.1) isn't checked for refs, and skipFetch bypasses fetch — should pass
+    assert.equal(r.ok, true, JSON.stringify(r.errors));
+  });
+});
+
 describe('fetchUrl', () => {
   it('returns ok=true for 200', async () => {
     const r = await fetchUrl(`${base}/200`, { fetchTimeoutMs: 2000 });
