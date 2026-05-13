@@ -272,3 +272,174 @@ describe('POST /api/feedback/library/:id', () => {
     server.close();
   });
 });
+
+describe('POST /api/feedback/library/:id/report', () => {
+  function buildAgent() {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'library-report-'));
+    const itemsDir = path.join(tmpDir, 'content', 'items');
+    fs.mkdirSync(itemsDir, { recursive: true });
+    const item = {
+      id: 'heat-1995',
+      title: 'Heat',
+      category: 'movies',
+      source: 'hulu',
+      source_url: 'https://www.hulu.com/movie/heat',
+      status: 'linked',
+    };
+    fs.writeFileSync(
+      path.join(itemsDir, 'heat-1995.yaml'),
+      require('js-yaml').dump(item, { lineWidth: -1 })
+    );
+    return tmpDir;
+  }
+
+  it('moves the item to content/reported/ with a _report block', async () => {
+    const tmpDir = buildAgent();
+    const { server } = createLibraryServer({ agentDir: tmpDir });
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/feedback/library/heat-1995/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'Spanish edition, not English', category: 'language' }),
+    });
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
+
+    // Item gone from items/, present in reported/ with the _report block
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'content', 'items', 'heat-1995.yaml')), 'item should be gone from items/');
+    const reportedPath = path.join(tmpDir, 'content', 'reported', 'heat-1995.yaml');
+    assert.ok(fs.existsSync(reportedPath), 'item should be in reported/');
+    const reportedYaml = require('js-yaml').load(fs.readFileSync(reportedPath, 'utf-8'));
+    assert.equal(reportedYaml.id, 'heat-1995');
+    assert.equal(reportedYaml._report.category, 'language');
+    assert.match(reportedYaml._report.reason, /Spanish edition/);
+    assert.ok(reportedYaml._report.reported_at);
+
+    // Feedback file dropped for the agent
+    const fbPath = path.join(tmpDir, 'input', 'feedback', 'heat-1995.report.yaml');
+    assert.ok(fs.existsSync(fbPath), 'feedback file should be created');
+    const fbYaml = require('js-yaml').load(fs.readFileSync(fbPath, 'utf-8'));
+    assert.equal(fbYaml.item, 'heat-1995');
+    assert.equal(fbYaml.report.category, 'language');
+    assert.match(fbYaml.report.reason, /Spanish edition/);
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('defaults category to "other" when omitted', async () => {
+    const tmpDir = buildAgent();
+    const { server } = createLibraryServer({ agentDir: tmpDir });
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status } = await fetchJSON(port, '/api/feedback/library/heat-1995/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'just bad' }),
+    });
+    assert.equal(status, 200);
+
+    const reportedYaml = require('js-yaml').load(
+      fs.readFileSync(path.join(tmpDir, 'content', 'reported', 'heat-1995.yaml'), 'utf-8')
+    );
+    assert.equal(reportedYaml._report.category, 'other');
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('rejects missing reason', async () => {
+    const tmpDir = buildAgent();
+    const { server } = createLibraryServer({ agentDir: tmpDir });
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/feedback/library/heat-1995/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: 'language' }),
+    });
+    assert.equal(status, 400);
+    assert.match(data.error, /reason is required/);
+
+    // Item should still be in items/
+    assert.ok(fs.existsSync(path.join(tmpDir, 'content', 'items', 'heat-1995.yaml')));
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('rejects whitespace-only reason', async () => {
+    const tmpDir = buildAgent();
+    const { server } = createLibraryServer({ agentDir: tmpDir });
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/feedback/library/heat-1995/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: '   \n  ' }),
+    });
+    assert.equal(status, 400);
+    assert.match(data.error, /reason is required/);
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('rejects invalid category', async () => {
+    const tmpDir = buildAgent();
+    const { server } = createLibraryServer({ agentDir: tmpDir });
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/feedback/library/heat-1995/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'x', category: 'bogus' }),
+    });
+    assert.equal(status, 400);
+    assert.match(data.error, /category must be one of/);
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('returns 404 for an item not in the library', async () => {
+    const tmpDir = buildAgent();
+    const { server } = createLibraryServer({ agentDir: tmpDir });
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status, data } = await fetchJSON(port, '/api/feedback/library/no-such-item/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'x', category: 'other' }),
+    });
+    assert.equal(status, 404);
+    assert.match(data.error, /not found/i);
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('rejects invalid id with path traversal', async () => {
+    const tmpDir = buildAgent();
+    const { server } = createLibraryServer({ agentDir: tmpDir });
+    await new Promise(r => server.listen(0, r));
+    const port = server.address().port;
+
+    const { status } = await fetchJSON(port, '/api/feedback/library/' + encodeURIComponent('../../etc/passwd') + '/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'x' }),
+    });
+    assert.equal(status, 400);
+
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+});
