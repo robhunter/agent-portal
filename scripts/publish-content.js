@@ -12,11 +12,16 @@ const yaml = require('js-yaml');
 const { validateItem } = require('../lib/content-validator');
 
 function parseArgs(argv) {
-  const args = { positional: [], dryRun: false, skipFetch: false, agentDir: null };
+  const args = {
+    positional: [], dryRun: false, skipFetch: false, skipExtraction: false,
+    json: false, agentDir: null,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--dry-run') args.dryRun = true;
     else if (a === '--skip-fetch') args.skipFetch = true;
+    else if (a === '--skip-extraction') args.skipExtraction = true;
+    else if (a === '--json') args.json = true;
     else if (a === '--agent-dir') args.agentDir = argv[++i];
     else if (a === '--help' || a === '-h') args.help = true;
     else args.positional.push(a);
@@ -25,7 +30,7 @@ function parseArgs(argv) {
 }
 
 function usage(stream = process.stderr) {
-  stream.write('Usage: publish-content.js <yaml-path> [--agent-dir <dir>] [--dry-run] [--skip-fetch]\n');
+  stream.write('Usage: publish-content.js <yaml-path> [--agent-dir <dir>] [--dry-run] [--skip-fetch] [--skip-extraction] [--json]\n');
 }
 
 function readDataDirFromConfig(agentDir) {
@@ -77,45 +82,70 @@ async function main() {
     process.exit(2);
   }
 
-  const { ok, errors } = await validateItem(item, sources, { skipFetch: args.skipFetch });
+  const validation = await validateItem(item, sources, {
+    skipFetch: args.skipFetch,
+    skipExtraction: args.skipExtraction,
+    dataRoot,
+  });
+  const { ok, errors, warnings = [], extractor } = validation;
+
+  // Build a machine-readable result envelope used by the eval orchestrator
+  // (Type B / Type E scoring). Same shape regardless of pass/fail.
+  const result = {
+    ok,
+    id: item.id || null,
+    errors,
+    warnings,
+    extractor: extractor || null,
+    path: null,
+    dry_run: args.dryRun,
+  };
 
   if (ok) {
-    process.stdout.write(`PASS '${item.id}'\n`);
-    if (args.dryRun) {
-      process.stdout.write('(dry-run: no filesystem changes)\n');
-      process.exit(0);
+    if (!args.dryRun) {
+      fs.mkdirSync(itemsDir, { recursive: true });
+      const destPath = path.join(itemsDir, `${item.id}.yaml`);
+      fs.writeFileSync(destPath, yaml.dump(item, { lineWidth: -1 }));
+      if (path.resolve(yamlPath) !== path.resolve(destPath)) {
+        try { fs.unlinkSync(yamlPath); } catch {}
+      }
+      result.path = destPath;
     }
-    fs.mkdirSync(itemsDir, { recursive: true });
-    const destPath = path.join(itemsDir, `${item.id}.yaml`);
-    fs.writeFileSync(destPath, yaml.dump(item, { lineWidth: -1 }));
-    if (path.resolve(yamlPath) !== path.resolve(destPath)) {
-      try { fs.unlinkSync(yamlPath); } catch {}
+    if (args.json) {
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    } else {
+      process.stdout.write(`PASS '${item.id}'\n`);
+      if (args.dryRun) process.stdout.write('(dry-run: no filesystem changes)\n');
+      else process.stdout.write(`-> ${result.path}\n`);
+      if (warnings.length) process.stdout.write(`(${warnings.length} warning${warnings.length === 1 ? '' : 's'})\n`);
     }
-    process.stdout.write(`-> ${destPath}\n`);
     process.exit(0);
   }
 
   // Validation failed
-  process.stderr.write(`FAIL '${item.id || '(no id)'}' (${errors.length} error${errors.length === 1 ? '' : 's'}):\n`);
-  process.stderr.write(formatErrors(errors) + '\n');
-
-  if (args.dryRun) {
-    process.stderr.write('(dry-run: no filesystem changes)\n');
-    process.exit(1);
+  if (!args.dryRun) {
+    fs.mkdirSync(rejectedDir, { recursive: true });
+    const rejectedId = item.id || `unknown-${Date.now()}`;
+    const rejectedPath = path.join(rejectedDir, `${rejectedId}.yaml`);
+    const enriched = {
+      ...item,
+      _validation: { rejected_at: new Date().toISOString(), errors, warnings },
+    };
+    fs.writeFileSync(rejectedPath, yaml.dump(enriched, { lineWidth: -1 }));
+    if (path.resolve(yamlPath) !== path.resolve(rejectedPath)) {
+      try { fs.unlinkSync(yamlPath); } catch {}
+    }
+    result.path = rejectedPath;
   }
 
-  fs.mkdirSync(rejectedDir, { recursive: true });
-  const rejectedId = item.id || `unknown-${Date.now()}`;
-  const rejectedPath = path.join(rejectedDir, `${rejectedId}.yaml`);
-  const enriched = {
-    ...item,
-    _validation: { rejected_at: new Date().toISOString(), errors },
-  };
-  fs.writeFileSync(rejectedPath, yaml.dump(enriched, { lineWidth: -1 }));
-  if (path.resolve(yamlPath) !== path.resolve(rejectedPath)) {
-    try { fs.unlinkSync(yamlPath); } catch {}
+  if (args.json) {
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  } else {
+    process.stderr.write(`FAIL '${item.id || '(no id)'}' (${errors.length} error${errors.length === 1 ? '' : 's'}):\n`);
+    process.stderr.write(formatErrors(errors) + '\n');
+    if (args.dryRun) process.stderr.write('(dry-run: no filesystem changes)\n');
+    else process.stderr.write(`-> quarantined at ${result.path}\n`);
   }
-  process.stderr.write(`-> quarantined at ${rejectedPath}\n`);
   process.exit(1);
 }
 
