@@ -322,6 +322,19 @@ fi
 # Close lock fd before piping to harness to prevent fd leak into child processes
 step "$HARNESS_CMD starting"
 
+# Zero-work detection: if the harness exits 0 but the agent wrote no
+# events (no cycle_end summary, no journal entry, no anything), we
+# treat that as a soft failure and retry. Catches the failure mode
+# where the harness swallows a mid-cycle error and exits cleanly with
+# no work landed (e.g. goose hitting a stream-decode error from the
+# upstream API, printing "Ran into this error" and exit 0).
+#
+# Mechanism: snapshot the events.jsonl line count BEFORE the harness
+# invocation. After each attempt, if exit==0 but the line count is
+# unchanged, the agent wrote nothing — set HARNESS_EXIT to a non-zero
+# sentinel so the retry loop fires.
+EVENTS_FILE="$AGENT_DIR/$DATA_DIR/logs/events.jsonl"
+
 MAX_RETRIES=2
 RETRY=0
 HARNESS_EXIT=1
@@ -335,9 +348,23 @@ while [ "$HARNESS_EXIT" -ne 0 ] && [ "$RETRY" -lt "$MAX_RETRIES" ]; do
     sleep 30
   fi
 
+  EVENTS_BEFORE=$(wc -l < "$EVENTS_FILE" 2>/dev/null || echo 0)
+
   cat "$WAKE_PROMPT_FILE" 200>&- | $HARNESS_CMD $HARNESS_EXTRA_FLAGS \
     200>&- 2>&1 | tee 200>&- "$CYCLE_LOG"
   HARNESS_EXIT=${PIPESTATUS[1]}
+
+  # Zero-work check: harness exited 0 but agent wrote no events
+  if [ "$HARNESS_EXIT" -eq 0 ]; then
+    EVENTS_AFTER=$(wc -l < "$EVENTS_FILE" 2>/dev/null || echo 0)
+    if [ "$EVENTS_AFTER" -eq "$EVENTS_BEFORE" ]; then
+      step "harness exited 0 but agent wrote no events — treating as failure (zero-work cycle)"
+      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" warning \
+        "Harness exited 0 with no agent events; retrying (attempt $((RETRY+1)))" \
+        2>/dev/null || true
+      HARNESS_EXIT=98   # non-zero sentinel so the while loop retries
+    fi
+  fi
 
   RETRY=$((RETRY + 1))
 done
