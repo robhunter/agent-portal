@@ -281,6 +281,42 @@ if [ -d "$FRAMEWORK_DIR/instructions" ]; then
   step "shared instructions appended to wake prompt"
 fi
 
+# ── PER-CYCLE COST TRACKING ──
+# Snapshot OpenRouter usage before/after the harness invocation. Writes
+# data/logs/cycles/<id>-cost.yaml with start/end/delta. A separate
+# reconcile-cost.sh script (spawned detached after the cycle ends) re-
+# snaps the ledger 15 min later and writes the settled delta into the
+# same file. Settlement lag matters because OpenRouter's /credits ledger
+# posts asynchronously; an immediate snapshot can under-count by
+# ~10-15 min of activity.
+#
+# Only OpenRouter usage is tracked here — when OPEN_ROUTER_KEY isn't
+# present the snapshots are skipped silently and no cost.yaml is
+# written. Production cycles via the goose+v4-flash production path
+# always go through OpenRouter, so this covers the canonical case.
+or_usage() {
+  curl -s -H "Authorization: Bearer ${OPEN_ROUTER_KEY:-}" \
+    --max-time 15 \
+    https://openrouter.ai/api/v1/credits 2>/dev/null \
+    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['data']['total_usage'])" 2>/dev/null
+}
+
+COST_FILE=""
+USAGE_BEFORE=""
+CYCLE_START_ISO=""
+if [ -n "${OPEN_ROUTER_KEY:-}" ]; then
+  USAGE_BEFORE=$(or_usage)
+  if [ -n "$USAGE_BEFORE" ]; then
+    CYCLE_START_ISO=$(date -Iseconds)
+    CYCLE_COST_ID=$(date +%Y%m%d-%H%M%S)
+    COST_FILE="$AGENT_DIR/$DATA_DIR/logs/cycles/$CYCLE_COST_ID-cost.yaml"
+    mkdir -p "$(dirname "$COST_FILE")"
+    step "cost-tracking: usage_at_start=\$$USAGE_BEFORE"
+  else
+    step "cost-tracking: failed to fetch OR /credits ledger; skipping"
+  fi
+fi
+
 # ── HARNESS INVOCATION ──
 
 # Close lock fd before piping to harness to prevent fd leak into child processes
@@ -308,6 +344,45 @@ done
 set -e
 
 step "harness finished (exit=$HARNESS_EXIT, attempts=$RETRY)"
+
+# ── PER-CYCLE COST TRACKING (continued) ──
+# Take the @end snapshot, write cost.yaml, spawn reconciliation. Done
+# even on harness failure — cycles that fail still consume tokens.
+if [ -n "$COST_FILE" ] && [ -n "$USAGE_BEFORE" ]; then
+  USAGE_AFTER_IMMEDIATE=$(or_usage)
+  if [ -n "$USAGE_AFTER_IMMEDIATE" ]; then
+    DELTA_UNSETTLED=$(python3 -c "print(round($USAGE_AFTER_IMMEDIATE - $USAGE_BEFORE, 6))")
+    cat > "$COST_FILE" <<COSTEOF
+cycle_id: $CYCLE_COST_ID
+started_at: $CYCLE_START_ISO
+ended_at: $(date -Iseconds)
+provider: openrouter
+usage_at_start_usd: $USAGE_BEFORE
+usage_at_end_immediate_usd: $USAGE_AFTER_IMMEDIATE
+delta_unsettled_usd: $DELTA_UNSETTLED
+usage_at_end_settled_usd: null
+delta_settled_usd: null
+settlement_reconciled: false
+reconciled_at: null
+harness_exit: $HARNESS_EXIT
+harness_attempts: $RETRY
+COSTEOF
+    step "cost-tracking: usage_at_end_immediate=\$$USAGE_AFTER_IMMEDIATE delta_unsettled=\$$DELTA_UNSETTLED → $COST_FILE"
+
+    # Spawn settlement reconciliation in the background. Detach with
+    # nohup + & + disown so wake.sh exits promptly while the child
+    # waits 15 min and updates cost.yaml with the settled delta.
+    if [ -x "$FRAMEWORK_DIR/scripts/reconcile-cost.sh" ]; then
+      nohup bash "$FRAMEWORK_DIR/scripts/reconcile-cost.sh" \
+        "$COST_FILE" "$OPEN_ROUTER_KEY" 900 \
+        >>"$DATA_DIR/logs/cycles/reconcile-cost.log" 2>&1 &
+      disown $! 2>/dev/null || true
+      step "cost-tracking: reconciliation scheduled (pid=$!, settles in 15min)"
+    fi
+  else
+    step "cost-tracking: failed to fetch OR /credits @end snapshot; no cost.yaml written"
+  fi
+fi
 
 # ── POST-CYCLE ──
 
