@@ -61,6 +61,23 @@ DATA_DIR=data bash "$SCRIPTS/log-event.sh" "$TMP" cycle_start "env override"
 [ -f "$TMP/data/logs/events.jsonl" ] && ok "env override redirected to data/" || fail "env override ignored"
 rm -rf "$TMP"
 
+echo "## Test 3b: special characters in the summary produce valid JSONL (not corruption)"
+TMP=$(make_agent legacy)
+unset DATA_DIR
+TRICKY='Shipped "dark mode"; fixed C:\path, and a, comma'
+bash "$SCRIPTS/log-event.sh" "$TMP" work "$TRICKY" agentdeals
+LINE=$(tail -1 "$TMP/logs/events.jsonl")
+if printf '%s' "$LINE" | python3 -c "import json,sys; json.loads(sys.stdin.read())" 2>/dev/null; then
+  ok "summary with quotes/backslash/comma is valid JSON"
+else
+  fail "special-char summary corrupted the JSONL: $LINE"
+fi
+GOT=$(printf '%s' "$LINE" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['summary'])" 2>/dev/null)
+[ "$GOT" = "$TRICKY" ] && ok "summary round-trips exactly" || fail "summary mangled: got [$GOT] want [$TRICKY]"
+PROJ=$(printf '%s' "$LINE" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['project'])" 2>/dev/null)
+[ "$PROJ" = "agentdeals" ] && ok "project field preserved" || fail "project field lost"
+rm -rf "$TMP"
+
 echo ""
 echo "# log-journal.sh respects DATA_DIR"
 echo "## Test 4: dataDir=data — writes to <agentDir>/data/journals/"

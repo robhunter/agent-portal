@@ -23,9 +23,23 @@ if [ -z "$DATA_DIR" ] && [ -f "$AGENT_DIR/portal.config.json" ]; then
 fi
 DATA_DIR="${DATA_DIR:-.}"
 
-ENTRY="{\"ts\":\"$(date -Iseconds)\",\"type\":\"$TYPE\",\"summary\":\"$SUMMARY\""
-[ -n "$PROJECT" ] && ENTRY="$ENTRY,\"project\":\"$PROJECT\""
-ENTRY="$ENTRY}"
+# Build the JSON line with python3 (a hard framework dependency, used the same
+# way in wake.sh/health-check.sh) so that double-quotes, backslashes, or
+# newlines in the type/summary/project are escaped correctly. Raw string
+# interpolation here silently produced invalid JSONL whenever a summary
+# contained a `"` (common — e.g. Shipped "dark mode"), and downstream consumers
+# that JSON.parse line-by-line then dropped the event entirely.
+ENTRY="$(EVENT_TS="$(date -Iseconds)" EVENT_TYPE="$TYPE" EVENT_SUMMARY="$SUMMARY" EVENT_PROJECT="$PROJECT" python3 -c '
+import json, os
+entry = {
+    "ts": os.environ["EVENT_TS"],
+    "type": os.environ["EVENT_TYPE"],
+    "summary": os.environ["EVENT_SUMMARY"],
+}
+if os.environ.get("EVENT_PROJECT"):
+    entry["project"] = os.environ["EVENT_PROJECT"]
+print(json.dumps(entry, ensure_ascii=False, separators=(",", ":")))
+')"
 
 mkdir -p "$AGENT_DIR/$DATA_DIR/logs"
 echo "$ENTRY" >> "$AGENT_DIR/$DATA_DIR/logs/events.jsonl"
