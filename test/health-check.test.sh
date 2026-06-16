@@ -420,6 +420,34 @@ ONLY=$(jq -r '.project' "$NO_AGENT/logs/health.jsonl")
 assert_eq "Standalone" "$ONLY" "project name correctly recorded"
 rm -rf "$NO_AGENT"
 
+# --- Test 20: dataDir layout — writes under <agent>/<DATA_DIR>/logs (#247 F4) ---
+# A dataDir:"data" agent reads its Health tab from data/logs/health.jsonl
+# (lib/routes/health.js -> dataPath(config,'logs','health.jsonl')). The script
+# must resolve DATA_DIR from portal.config.json and write to the same place,
+# not to the legacy ./logs. DATA_DIR= prefix keeps the test hermetic regardless
+# of the caller's environment.
+echo "## Test 20: dataDir:\"data\" — health.jsonl lands under data/logs, not ./logs"
+DD_AGENT=$(mktemp -d)
+echo '{"dataDir":"data"}' > "$DD_AGENT/portal.config.json"
+mkdir -p "$DD_AGENT/data/logs"
+cat > "$DD_AGENT/agent.yaml" <<EOF
+name: ddagent
+endpoints:
+  - url: http://127.0.0.1:$PORT/200
+    type: http
+EOF
+EXIT=0
+DATA_DIR= "$HEALTH" "$DD_AGENT" >/dev/null 2>&1 || EXIT=$?
+assert_eq "0" "$EXIT" "exit 0 under dataDir layout"
+if [ -f "$DD_AGENT/data/logs/health.jsonl" ]; then DATA_LOG=yes; else DATA_LOG=no; fi
+assert_eq "yes" "$DATA_LOG" "health.jsonl written under data/logs (DATA_DIR-aware)"
+if [ -f "$DD_AGENT/logs/health.jsonl" ]; then LEGACY_LOG=yes; else LEGACY_LOG=no; fi
+assert_eq "no" "$LEGACY_LOG" "nothing written to legacy ./logs path"
+if [ "$DATA_LOG" = "yes" ]; then
+  assert_eq "ddagent" "$(jq -r '.project' "$DD_AGENT/data/logs/health.jsonl")" "project recorded under dataDir layout"
+fi
+rm -rf "$DD_AGENT"
+
 echo ""
 echo "# Results: $PASS/$TESTS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

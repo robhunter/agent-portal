@@ -5,8 +5,9 @@
 #
 # Default mode: reads the `endpoints:` list from <agent-dir>/agent.yaml (a list
 # of {url, type} objects), issues GET requests, measures latency, and writes
-# one canonical JSONL line per endpoint to <agent-dir>/logs/health.jsonl
-# in the schema consumed by the portal Health tab:
+# one canonical JSONL line per endpoint to <agent-dir>/<DATA_DIR>/logs/health.jsonl
+# (DATA_DIR resolves from portal.config.json, default ".") in the schema
+# consumed by the portal Health tab:
 #
 #   {"ts","project","endpoint","status","latency_ms","ok"}
 #
@@ -78,7 +79,19 @@ if [ -n "$THRESHOLD" ] && ! [[ "$THRESHOLD" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-LOG_DIR="$AGENT_DIR/logs"
+# Resolve DATA_DIR from portal.config.json (defaults to ".") so health.jsonl
+# lands where the portal reads it. lib/routes/health.js reads via
+# dataPath(config,'logs','health.jsonl') = <agent-dir>/<DATA_DIR>/logs/...;
+# without this, a dataDir:"data" agent's results would be written to ./logs
+# while the Health tab reads ./data/logs and shows nothing. Same idiom as the
+# sibling path-writing scripts (log-event.sh, log-journal.sh).
+FRAMEWORK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -z "$DATA_DIR" ] && [ -f "$AGENT_DIR/portal.config.json" ]; then
+  eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR" 2>/dev/null | grep '^export DATA_DIR=')"
+fi
+DATA_DIR="${DATA_DIR:-.}"
+
+LOG_DIR="$AGENT_DIR/$DATA_DIR/logs"
 LOG="$LOG_DIR/health.jsonl"
 
 if [ ! -d "$LOG_DIR" ]; then
