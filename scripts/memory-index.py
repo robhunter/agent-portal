@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """Index journal entries and events into SQLite for semantic search.
 
-Usage: memory-venv/bin/python scripts/memory-index.py /path/to/agent-dir [--data-dir DATA_DIR]
+Usage: memory-venv/bin/python scripts/memory-index.py /path/to/agent-dir [--data-dir DATA_DIR] [--reindex]
 
 Parses journal markdown files and events.jsonl, generates embeddings via
 fastembed (nomic-embed-text-v1.5), and stores in SQLite with FTS5 for
 keyword search and numpy-based vector similarity. Incremental: only
-indexes new entries since last run.
+indexes new entries since last run (timestamps are compared chronologically,
+parsed to UTC — see parse_ts).
 
 --data-dir defaults to "." (legacy layout — journals/, logs/, memory/ at
 agent-dir root). Set to "data" for the dataDir layout where they live
 under <agent-dir>/data/. The DATA_DIR environment variable is honored
 when --data-dir is absent (matches what read-harness-config.sh exports).
+
+--reindex clears the incremental watermarks so every entry is re-examined.
+Already-indexed entries are skipped by the is_duplicate check; this is the
+recovery path for entries that an earlier lexicographic-comparison bug
+silently dropped. It re-embeds all source entries, so use it deliberately.
 """
 
 import json
@@ -20,6 +26,7 @@ import re
 import sqlite3
 import struct
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Prefer the OS CA bundle when present so HTTPS works inside TLS-intercepting
@@ -30,12 +37,62 @@ if "SSL_CERT_FILE" not in os.environ and os.path.exists("/etc/ssl/certs/ca-certi
     os.environ["SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
 
 import numpy as np
-from fastembed import TextEmbedding
+
+# fastembed (the embedding model) is imported lazily inside main() so this module
+# can be imported to unit-test the pure helpers (parse_ts, select_new_entries)
+# without loading the heavy model. numpy stays top-level — it is light and is used
+# by module-level helpers (is_duplicate / deserialize_vec).
 
 EMBED_DIM = 384
 SIMILARITY_THRESHOLD = 0.92
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
 EMBED_BATCH_SIZE = 50
+
+
+def parse_ts(s: str) -> datetime:
+    """Parse an ISO-8601 timestamp into a tz-aware UTC datetime for *chronological*
+    comparison.
+
+    Comparing ISO-8601 strings lexicographically (the previous behaviour) is wrong
+    whenever the UTC offset changes — e.g. a container switching from UTC to
+    America/Los_Angeles, or any DST transition. A chronologically-later entry can
+    then sort lexicographically *earlier*: "2026-06-15T07:00:00-07:00" (14:00Z) is
+    later than "2026-06-15T13:00:00+00:00" (13:00Z), yet "07..." < "13..." as
+    strings. The incremental filter would treat the later entry as already-indexed
+    and silently drop it — it is never embedded and never surfaces in memory-search.
+
+    Fail-safe: empty or unparseable timestamps return datetime.min (UTC) so they
+    sort oldest and get (re-)indexed rather than silently dropped; the is_duplicate
+    check prevents re-embedding genuine duplicates.
+    """
+    if not s:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def select_new_entries(entries: list[dict], last_ts: str) -> tuple[list[dict], str]:
+    """Select entries newer than the watermark and compute the next watermark.
+
+    Returns (new_entries, new_watermark). "Newer" is decided chronologically via
+    parse_ts, never by string comparison (see parse_ts for why). The watermark is
+    the original ISO string of the chronologically-latest new entry, or last_ts
+    unchanged when nothing is newer.
+    """
+    last_dt = parse_ts(last_ts)
+    new = [e for e in entries if parse_ts(e["timestamp"]) > last_dt]
+
+    watermark, watermark_dt = last_ts, last_dt
+    for e in new:
+        e_dt = parse_ts(e["timestamp"])
+        if e_dt > watermark_dt:
+            watermark, watermark_dt = e["timestamp"], e_dt
+    return new, watermark
 
 
 def init_db(db_path: str) -> sqlite3.Connection:
@@ -178,10 +235,11 @@ def set_last_indexed(conn: sqlite3.Connection, key: str, value: str):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: memory-index.py /path/to/agent-dir [--data-dir DATA_DIR]", file=sys.stderr)
+        print("Usage: memory-index.py /path/to/agent-dir [--data-dir DATA_DIR] [--reindex]", file=sys.stderr)
         sys.exit(1)
 
     agent_dir = Path(sys.argv[1])
+    reindex = "--reindex" in sys.argv
 
     # Resolve data-dir (CLI flag wins; else $DATA_DIR; else ".")
     data_dir = "."
@@ -201,6 +259,19 @@ def main():
 
     conn = init_db(str(db_path))
 
+    if reindex:
+        # Recovery path: clear the incremental watermarks so every entry is
+        # re-examined. Entries already indexed are caught by the is_duplicate
+        # check below and skipped; entries previously dropped by the
+        # lexicographic-comparison bug get indexed this run.
+        conn.execute("DELETE FROM index_state WHERE key IN ('journal_last_ts', 'event_last_ts')")
+        conn.commit()
+        print("Reindex: cleared incremental watermarks (full re-scan; duplicates skipped).")
+
+    # Imported here (not at module top) so this module can be imported to unit-test
+    # the pure helpers without loading the embedding model.
+    from fastembed import TextEmbedding
+
     print(f"Loading embedding model ({MODEL_NAME})...")
     model = TextEmbedding(model_name=MODEL_NAME)
 
@@ -208,12 +279,14 @@ def main():
     journal_entries = parse_journal_entries(journal_dir) if journal_dir.exists() else []
     event_entries = parse_events(events_path)
 
-    # Filter to only new entries (incremental)
+    # Filter to only new entries (incremental). select_new_entries compares
+    # timestamps chronologically (parsed to UTC), never lexicographically — see
+    # parse_ts. It also returns the next watermark (latest new entry's ISO string).
     last_journal_ts = get_last_indexed(conn, "journal_last_ts")
     last_event_ts = get_last_indexed(conn, "event_last_ts")
 
-    new_journal = [e for e in journal_entries if e["timestamp"] > last_journal_ts]
-    new_events = [e for e in event_entries if e["timestamp"] > last_event_ts]
+    new_journal, new_journal_ts = select_new_entries(journal_entries, last_journal_ts)
+    new_events, new_event_ts = select_new_entries(event_entries, last_event_ts)
 
     all_new = new_journal + new_events
     if not all_new:
@@ -233,8 +306,6 @@ def main():
 
     indexed = 0
     skipped = 0
-    max_journal_ts = last_journal_ts
-    max_event_ts = last_event_ts
 
     for entry, emb in zip(all_new, embeddings):
         emb_np = np.array(emb, dtype=np.float32)
@@ -244,25 +315,22 @@ def main():
         if is_duplicate(conn, emb_np):
             skipped += 1
         else:
-            cursor = conn.execute(
+            conn.execute(
                 "INSERT INTO entries (source, timestamp, author, tag, content, embedding) VALUES (?, ?, ?, ?, ?, ?)",
                 (entry["source"], entry["timestamp"], entry.get("author"),
                  entry.get("tag"), entry["content"], emb_bytes)
             )
             indexed += 1
 
-        # Track max timestamps regardless
-        if entry["source"] == "journal" and entry["timestamp"] > max_journal_ts:
-            max_journal_ts = entry["timestamp"]
-        elif entry["source"] == "event" and entry["timestamp"] > max_event_ts:
-            max_event_ts = entry["timestamp"]
-
     conn.commit()
 
-    if max_journal_ts > last_journal_ts:
-        set_last_indexed(conn, "journal_last_ts", max_journal_ts)
-    if max_event_ts > last_event_ts:
-        set_last_indexed(conn, "event_last_ts", max_event_ts)
+    # Advance each watermark to the chronologically-latest entry seen this run
+    # (stored as its original ISO string). Done whenever new entries existed,
+    # regardless of dedup skips — matching the prior behaviour.
+    if new_journal:
+        set_last_indexed(conn, "journal_last_ts", new_journal_ts)
+    if new_events:
+        set_last_indexed(conn, "event_last_ts", new_event_ts)
 
     print(f"Done. Indexed: {indexed}, Skipped (duplicates): {skipped}")
     conn.close()
