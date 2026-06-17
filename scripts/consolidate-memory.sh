@@ -53,11 +53,12 @@ if [ -f "$INSIGHTS_FILE" ]; then
   LAST_CONSOLIDATION_TS=$(grep -E '^\s*last_consolidated:' "$INSIGHTS_FILE" 2>/dev/null | head -1 | sed 's/^[^:]*: *//' | tr -d '"' | tr -d "'" | tr -d ' ')
 fi
 
-# Count cycles since last consolidation
+# Count cycle_start events since last consolidation. Timestamps are compared
+# chronologically (consolidate-filter.py) — a lexicographic ISO compare miscounts
+# across a UTC-offset / DST change, the same root cause as #247 F2 (memory-index.py).
 if [ -n "$LAST_CONSOLIDATION_TS" ]; then
-  CYCLES_SINCE=$(grep -c '"type":"cycle_start"' "$EVENTS_FILE" 2>/dev/null || echo 0)
-  CYCLES_BEFORE=$(grep '"type":"cycle_start"' "$EVENTS_FILE" 2>/dev/null | awk -F'"ts":"' '{print $2}' | awk -F'"' '{print $1}' | awk -v ts="$LAST_CONSOLIDATION_TS" '$1 <= ts' | wc -l)
-  CYCLES_SINCE=$((CYCLES_SINCE - CYCLES_BEFORE))
+  CYCLES_SINCE=$(grep '"type":"cycle_start"' "$EVENTS_FILE" 2>/dev/null | \
+    python3 "$FRAMEWORK_DIR/scripts/consolidate-filter.py" count-after "$LAST_CONSOLIDATION_TS")
 else
   CYCLES_SINCE=$(grep -c '"type":"cycle_start"' "$EVENTS_FILE" 2>/dev/null || echo 0)
 fi
@@ -76,16 +77,9 @@ JOURNAL_CONTENT=""
 for md_file in "$JOURNALS_DIR"/*.md; do
   [ -f "$md_file" ] || continue
   if [ -n "$LAST_CONSOLIDATION_TS" ]; then
-    # Extract entries newer than last consolidation timestamp
+    # Extract entries newer than last consolidation (chronological compare, #247 F3)
     JOURNAL_CONTENT="$JOURNAL_CONTENT
-$(awk -v ts="$LAST_CONSOLIDATION_TS" '
-  /^### [0-9]/ {
-    split($2, a, " ")
-    entry_ts = a[1]
-    if (entry_ts > ts) { printing=1 } else { printing=0 }
-  }
-  printing { print }
-' "$md_file")"
+$(python3 "$FRAMEWORK_DIR/scripts/consolidate-filter.py" journal-after "$LAST_CONSOLIDATION_TS" < "$md_file")"
   else
     JOURNAL_CONTENT="$JOURNAL_CONTENT
 $(cat "$md_file")"
@@ -95,8 +89,9 @@ done
 # Collect work events since last consolidation
 EVENTS_CONTENT=""
 if [ -n "$LAST_CONSOLIDATION_TS" ]; then
+  # Events newer than last consolidation (chronological compare, #247 F3)
   EVENTS_CONTENT=$(grep -E '"type":"(work|error|dissonance)"' "$EVENTS_FILE" 2>/dev/null | \
-    awk -F'"ts":"' '{split($2,a,"\""); if(a[1] > "'"$LAST_CONSOLIDATION_TS"'") print}' || true)
+    python3 "$FRAMEWORK_DIR/scripts/consolidate-filter.py" after "$LAST_CONSOLIDATION_TS" || true)
 else
   EVENTS_CONTENT=$(grep -E '"type":"(work|error|dissonance)"' "$EVENTS_FILE" 2>/dev/null || true)
 fi
