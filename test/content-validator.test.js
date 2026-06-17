@@ -22,6 +22,9 @@ function startTestServer() {
       }
       if (p === '/redirect') { res.writeHead(302, { Location: '/200' }); res.end(); return; }
       if (p === '/redirect-loop') { res.writeHead(302, { Location: '/redirect-loop' }); res.end(); return; }
+      // 3xx whose Location is unparseable even against a valid base (absolute
+      // URL with a broken authority). Must fail the URL gracefully, not crash.
+      if (p === '/redirect-bad-location') { res.writeHead(302, { Location: 'http://[bad' }); res.end(); return; }
       if (p === '/slow') { /* never respond */ return; }
       res.writeHead(200); res.end('default');
     });
@@ -189,6 +192,16 @@ describe('validateItem — live fetch (skipFetch=false)', () => {
     assert.equal(r.ok, true, JSON.stringify(r.errors));
   });
 
+  it('rejects (not crashes) on a 3xx with an unparseable Location', async () => {
+    const r = await validateItem(
+      makeItem({ source_url: `${base}/redirect-bad-location`, sources: [{ name: 'Test', url: `${base}/redirect-bad-location`, type: 'downloadable' }] }),
+      makeSources(),
+      { fetchTimeoutMs: 2000, fetchRetries: 0 }
+    );
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some(e => /invalid redirect Location/.test(e.reason)), JSON.stringify(r.errors));
+  });
+
   it('rejects on timeout (short timeout against /slow)', async () => {
     const r = await validateItem(
       makeItem({ source_url: `${base}/slow`, sources: [{ name: 'Test', url: `${base}/slow`, type: 'downloadable' }] }),
@@ -344,5 +357,16 @@ describe('fetchUrl', () => {
     const r = await fetchUrl('file:///etc/passwd', { fetchTimeoutMs: 1000 });
     assert.equal(r.ok, false);
     assert.match(r.reason, /unsupported protocol/);
+  });
+
+  it('fails gracefully on a 3xx with an unparseable Location (no crash)', async () => {
+    // Regression: the redirect-target parse was the one new URL() in the file
+    // not wrapped in try/catch, so a malformed server-sent Location threw out
+    // of the async response callback as an uncaughtException, crashing the
+    // process instead of resolving. Must return ok=false, not throw.
+    const r = await fetchUrl(`${base}/redirect-bad-location`, { fetchTimeoutMs: 2000, fetchRetries: 0 });
+    assert.equal(r.ok, false);
+    assert.equal(r.status, null);
+    assert.match(r.reason, /invalid redirect Location/);
   });
 });
