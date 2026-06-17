@@ -35,6 +35,13 @@ fi
 # Remove starting marker now that real flock is held
 rm -f "${AGENT_LOCK_FILE}.starting"
 
+# Release the lock on any exit (normal, error, signal). Without this, a child
+# that inherits the lock fd (200) — the harness, or a detached helper it spawns —
+# keeps the lock's open file description locked after this script exits, blocking
+# subsequent cycles until wake.sh's stale-lock timeout. Mirrors wake.sh's
+# lock-reliability handling (added to wake.sh in PR #66, never propagated here).
+trap 'flock -u 200 2>/dev/null; exec 200>&- 2>/dev/null' EXIT
+
 CYCLE_TS="$(date +%Y%m%d-%H%M)"
 CYCLE_LOG="$DATA_DIR/logs/cycles/${CYCLE_TS}-respond.log"
 mkdir -p "$DATA_DIR/logs/cycles"
@@ -51,17 +58,17 @@ if [ "$WORKSPACES_COUNT" -gt 0 ] 2>/dev/null; then
     ws_repo="${!repo_var}"; ws_path="${!path_var}"; ws_npm="${!npm_var}"
 
     if [ -d "$ws_path/.git" ]; then
-      git -C "$ws_path" pull --ff-only 2>/dev/null || echo "Warning: pull failed for $ws_repo"
+      git -C "$ws_path" pull --ff-only 200>&- 2>/dev/null || echo "Warning: pull failed for $ws_repo"
     else
       mkdir -p "$(dirname "$ws_path")"
-      git clone "https://${GH_TOKEN}@github.com/${ws_repo}.git" "$ws_path" 2>/dev/null || {
+      git clone "https://${GH_TOKEN}@github.com/${ws_repo}.git" "$ws_path" 200>&- 2>/dev/null || {
         echo "Warning: clone failed for $ws_repo"
         continue
       }
     fi
 
     if [ "$ws_npm" = "true" ] && [ -f "$ws_path/package.json" ]; then
-      (cd "$ws_path" && npm install --production 2>&1) || echo "Warning: npm install failed for $ws_repo"
+      (cd "$ws_path" && npm install --production 200>&- 2>&1) || echo "Warning: npm install failed for $ws_repo"
     fi
   done
 fi
@@ -98,9 +105,11 @@ while [ "$HARNESS_EXIT" -ne 0 ] && [ "$RETRY" -lt "$MAX_RETRIES" ]; do
     sleep 30
   fi
 
+  # Close the lock fd (200) for the harness pipeline so it (and any detached
+  # child it spawns) cannot inherit and hold the lock. Mirrors wake.sh.
   set +e
-  cat "$PROMPT_FILE" | $HARNESS_CMD $HARNESS_EXTRA_FLAGS \
-    2>&1 | tee "$CYCLE_LOG"
+  cat "$PROMPT_FILE" 200>&- | $HARNESS_CMD $HARNESS_EXTRA_FLAGS \
+    200>&- 2>&1 | tee 200>&- "$CYCLE_LOG"
   HARNESS_EXIT=${PIPESTATUS[1]}
   set -e
 
