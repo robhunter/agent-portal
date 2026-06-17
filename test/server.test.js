@@ -143,6 +143,63 @@ describe('createServer', () => {
     const data = await res.json();
     assert.equal(data.error, 'Internal server error');
   });
+
+  // The dispatcher must `await` the handler INSIDE its try/catch. Async handlers
+  // that reject AFTER an await (the shape of every `JSON.parse(await readBody(req))`
+  // body parser) produce a rejected promise, not a synchronous throw — so the
+  // sync-throw test above passes even if the dispatcher drops the `await` and lets
+  // rejections escape. An escaped rejection is an unhandledRejection, which crashes
+  // the portal process on Node 15+ (a single malformed request body = portal-wide
+  // DoS). These two tests lock that invariant in for both dispatch paths. The
+  // AbortController makes a regression (response never sent) fail deterministically
+  // instead of hanging the suite.
+  it('returns 500 when an async route handler rejects after an await (exact match)', async () => {
+    server.close();
+
+    const routes = {
+      'POST /api/async-error': async () => {
+        await new Promise(resolve => setImmediate(resolve));
+        throw new Error('async boom'); // models JSON.parse(await readBody(req)) on a malformed body
+      }
+    };
+
+    const config = { name: 'Test', port: 0 };
+    server = createServer(config, { routes, getHTML: () => '<html></html>' });
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+
+    const res = await fetch(`http://localhost:${port}/api/async-error`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(3000),
+    });
+    assert.equal(res.status, 500);
+    const data = await res.json();
+    assert.equal(data.error, 'Internal server error');
+  });
+
+  it('returns 500 when an async parameterized route handler rejects after an await', async () => {
+    server.close();
+
+    const routes = {
+      'POST /api/items/:id': async () => {
+        await new Promise(resolve => setImmediate(resolve));
+        throw new Error('async boom');
+      }
+    };
+
+    const config = { name: 'Test', port: 0 };
+    server = createServer(config, { routes, getHTML: () => '<html></html>' });
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+
+    const res = await fetch(`http://localhost:${port}/api/items/42`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(3000),
+    });
+    assert.equal(res.status, 500);
+    const data = await res.json();
+    assert.equal(data.error, 'Internal server error');
+  });
 });
 
 // --- Tailscale auth middleware ---
