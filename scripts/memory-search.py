@@ -10,6 +10,7 @@ snippet, and relevance score.
 
 import math
 import os
+import re
 import sqlite3
 import struct
 import sys
@@ -24,7 +25,11 @@ if "SSL_CERT_FILE" not in os.environ and os.path.exists("/etc/ssl/certs/ca-certi
     os.environ["SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
 
 import numpy as np
-from fastembed import TextEmbedding
+
+# fastembed (the embedding model) is imported lazily inside main() so this module
+# can be imported to unit-test the pure helpers (build_fts_query) without loading
+# the heavy model. numpy stays top-level — it is light and is used by the
+# module-level vector helpers (serialize_vec / deserialize_vec).
 
 EMBED_DIM = 384
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
@@ -55,7 +60,32 @@ def recency_score(timestamp_str: str) -> float:
         return 0.0
 
 
-def search(db_path: str, query: str, model: TextEmbedding) -> list[dict]:
+def build_fts_query(query: str) -> str | None:
+    """Turn a free-text query into a safe FTS5 MATCH expression.
+
+    FTS5's MATCH syntax is not plain text: ``:`` introduces a column filter and
+    ``-``, ``(``, ``)``, ``*``, ``^``, double-quotes and the bare words AND/OR/NOT
+    are operators. Passing a raw query (e.g. ``"agent-portal"`` or ``"what did I
+    ship?"``) therefore raises ``sqlite3.OperationalError`` — which the caller's
+    except-clause silently swallows, disabling keyword matching for that query.
+    Most of this agent's queries name hyphenated repos/scripts (agent-portal,
+    memory-index, log-event), so the keyword half of the hybrid search was being
+    dropped on the majority of searches.
+
+    We extract word tokens and wrap each in double quotes so every term is a
+    literal string. FTS5 still tokenizes the quoted text with the table's own
+    tokenizer, so matching against indexed content is unchanged; tokens are
+    space-joined (FTS5 implicit AND), preserving the matching semantics for
+    queries that already parsed. Returns None when the query has no word
+    characters (nothing to match on).
+    """
+    tokens = re.findall(r"\w+", query)
+    if not tokens:
+        return None
+    return " ".join(f'"{t}"' for t in tokens)
+
+
+def search(db_path: str, query: str, model) -> list[dict]:
     """Perform hybrid search combining vector, keyword, and recency."""
     conn = sqlite3.connect(db_path)
 
@@ -75,19 +105,25 @@ def search(db_path: str, query: str, model: TextEmbedding) -> list[dict]:
         sorted_vec = sorted(vec_results.items(), key=lambda x: x[1], reverse=True)[:20]
         vec_results = dict(sorted_vec)
 
-    # FTS keyword search
+    # FTS keyword search. Sanitize the raw query into quoted literal terms first
+    # (see build_fts_query) — otherwise any FTS5 operator character in the query
+    # (a hyphen, ":", parens, "?", a bare NOT, ...) raises OperationalError that
+    # the except below would silently swallow, dropping the keyword half of the
+    # hybrid score. The except remains only as a last-resort guard.
     fts_results = {}
-    try:
-        fts_rows = conn.execute(
-            "SELECT rowid, rank FROM entries_fts WHERE entries_fts MATCH ? ORDER BY rank LIMIT 20",
-            (query,)
-        ).fetchall()
-        if fts_rows:
-            max_rank = max(abs(r[1]) for r in fts_rows)
-            for row_id, rank in fts_rows:
-                fts_results[row_id] = abs(rank) / max_rank if max_rank > 0 else 0
-    except Exception:
-        pass
+    match_query = build_fts_query(query)
+    if match_query:
+        try:
+            fts_rows = conn.execute(
+                "SELECT rowid, rank FROM entries_fts WHERE entries_fts MATCH ? ORDER BY rank LIMIT 20",
+                (match_query,)
+            ).fetchall()
+            if fts_rows:
+                max_rank = max(abs(r[1]) for r in fts_rows)
+                for row_id, rank in fts_rows:
+                    fts_results[row_id] = abs(rank) / max_rank if max_rank > 0 else 0
+        except Exception:
+            pass
 
     # Combine candidates
     all_ids = set(vec_results.keys()) | set(fts_results.keys())
@@ -178,6 +214,7 @@ def main():
         sys.exit(1)
 
     print(f"Loading embedding model ({MODEL_NAME})...", file=sys.stderr)
+    from fastembed import TextEmbedding
     model = TextEmbedding(model_name=MODEL_NAME)
 
     results = search(str(db_path), query, model)
