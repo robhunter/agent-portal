@@ -336,6 +336,68 @@ describe('GET /api/wins', () => {
   });
 });
 
+describe('GET /api/wins — instant-based 30-day filtering (mixed ts formats)', () => {
+  // Regression guard: wins.jsonl timestamps arrive in mixed ISO representations
+  // (shell `date` -> local numeric offset like -07:00; Python isoformat ->
+  // +00:00 with microseconds). The cutoff must be compared by absolute INSTANT,
+  // not by raw string >=, or a within-window win logged in local evening sorts
+  // lexicographically before a UTC-"Z" cutoff and is silently dropped.
+  let server, port, tmpDir;
+
+  // Express an instant as an ISO string in UTC-07:00 (shell `date` style: no fraction).
+  function fmtLocalMinus7(instantMs) {
+    return new Date(instantMs - 7 * 3600 * 1000).toISOString().slice(0, 19) + '-07:00';
+  }
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-wins-'));
+    fs.mkdirSync(path.join(tmpDir, 'logs'));
+    const now = Date.now();
+    const cutoffMs = now - 30 * 24 * 3600 * 1000;
+    const wins = [
+      // Boundary win: instant 6h INSIDE the window, but written in -07:00 form so
+      // its local wall-clock string sorts before the UTC-"Z" cutoff. The old
+      // lexicographic filter drops this; the instant filter keeps it.
+      `{"ts":"${fmtLocalMinus7(cutoffMs + 6 * 3600 * 1000)}","description":"BOUNDARY_LOCAL_OFFSET","project":"agent-portal"}`,
+      // Clearly recent (5 days ago), plain UTC "Z" — must stay included.
+      `{"ts":"${new Date(now - 5 * 24 * 3600 * 1000).toISOString()}","description":"RECENT_UTC_Z","project":"agent-portal"}`,
+      // Recent (3 days ago) in Python isoformat +00:00 with microseconds — must parse and stay included.
+      `{"ts":"${new Date(now - 3 * 24 * 3600 * 1000).toISOString().replace('Z', '000+00:00')}","description":"RECENT_PY_MICROS","project":"agent-portal"}`,
+      // Clearly old (40 days ago) — must be excluded.
+      `{"ts":"${new Date(now - 40 * 24 * 3600 * 1000).toISOString()}","description":"OLD_FORTY_DAYS","project":"agent-portal"}`,
+    ];
+    fs.writeFileSync(path.join(tmpDir, 'logs', 'wins.jsonl'), wins.join('\n') + '\n');
+
+    const result = createTestServer({ agentDir: tmpDir });
+    server = result.server;
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => { server.close(); fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it('keeps a within-window win written in a local numeric offset (the bug)', async () => {
+    const { status, data } = await fetchJSON(port, '/api/wins');
+    assert.equal(status, 200);
+    const descs = data.map(w => w.description);
+    assert.ok(descs.includes('BOUNDARY_LOCAL_OFFSET'),
+      'within-window -07:00 win was dropped by lexicographic comparison');
+  });
+
+  it('keeps recent wins in UTC-Z and Python-microsecond formats', async () => {
+    const { data } = await fetchJSON(port, '/api/wins');
+    const descs = data.map(w => w.description);
+    assert.ok(descs.includes('RECENT_UTC_Z'));
+    assert.ok(descs.includes('RECENT_PY_MICROS'));
+  });
+
+  it('excludes wins older than 30 days', async () => {
+    const { data } = await fetchJSON(port, '/api/wins');
+    const descs = data.map(w => w.description);
+    assert.ok(!descs.includes('OLD_FORTY_DAYS'), 'a 40-day-old win leaked into the 30-day view');
+  });
+});
+
 describe('GET /api/github/* (no repos configured)', () => {
   let server, port;
 
