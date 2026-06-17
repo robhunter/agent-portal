@@ -56,21 +56,31 @@ fi
 if [ -f "$CYCLE_FAILED_MARKER" ] && [ -n "$FRAMEWORK_LAST_KNOWN_GOOD" ] && [ "$FRAMEWORK_LAST_KNOWN_GOOD" != "null" ]; then
   if [ "$FRAMEWORK_COMMIT" != "$FRAMEWORK_LAST_KNOWN_GOOD" ]; then
     echo "Previous cycle failed and framework changed — rolling back to $FRAMEWORK_LAST_KNOWN_GOOD" >&2
-    git -C "$FRAMEWORK_DIR" checkout "$FRAMEWORK_LAST_KNOWN_GOOD" >&2 2>&1 || {
-      echo "ERROR: rollback failed" >&2
-      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" error \
-        "Framework rollback to $FRAMEWORK_LAST_KNOWN_GOOD failed"
-    }
-    FRAMEWORK_COMMIT="$FRAMEWORK_LAST_KNOWN_GOOD"
-    bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" rollback \
-      "Rolled back framework to $FRAMEWORK_LAST_KNOWN_GOOD"
-    # Restart portal again with the rolled-back code
-    if [ -f "$PORTAL_PID_FILE" ]; then
-      PORTAL_PID=$(cat "$PORTAL_PID_FILE" 2>/dev/null)
-      if [ -n "$PORTAL_PID" ] && kill -0 "$PORTAL_PID" 2>/dev/null; then
-        kill "$PORTAL_PID" 2>/dev/null
-        echo "Killed portal after rollback (PID $PORTAL_PID)" >&2
+    if git -C "$FRAMEWORK_DIR" checkout "$FRAMEWORK_LAST_KNOWN_GOOD" >&2 2>&1; then
+      # Checkout succeeded — HEAD is now the last-known-good. Report it as the
+      # current commit and log the rollback as a success.
+      FRAMEWORK_COMMIT="$FRAMEWORK_LAST_KNOWN_GOOD"
+      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" rollback \
+        "Rolled back framework to $FRAMEWORK_LAST_KNOWN_GOOD"
+      # Restart portal again with the rolled-back code
+      if [ -f "$PORTAL_PID_FILE" ]; then
+        PORTAL_PID=$(cat "$PORTAL_PID_FILE" 2>/dev/null)
+        if [ -n "$PORTAL_PID" ] && kill -0 "$PORTAL_PID" 2>/dev/null; then
+          kill "$PORTAL_PID" 2>/dev/null
+          echo "Killed portal after rollback (PID $PORTAL_PID)" >&2
+        fi
       fi
+    else
+      # Checkout FAILED — HEAD is still on the broken commit. Do NOT overwrite
+      # FRAMEWORK_COMMIT (it must keep reporting the real HEAD) and do NOT log a
+      # success rollback: otherwise wake.sh would record the last-known-good SHA
+      # while actually running the broken commit, poisoning framework-last-known-good.
+      # Exiting non-zero would not help — wake.sh consumes this via `eval "$(...)"`,
+      # which discards the exit status and would just blank FRAMEWORK_COMMIT (risking
+      # a last-known-good wipe). So we continue and report the real HEAD on stdout below.
+      echo "ERROR: rollback failed — HEAD remains on $FRAMEWORK_COMMIT" >&2
+      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" error \
+        "Framework rollback to $FRAMEWORK_LAST_KNOWN_GOOD failed; HEAD still on $FRAMEWORK_COMMIT"
     fi
   fi
 fi
