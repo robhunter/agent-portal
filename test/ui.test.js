@@ -56,9 +56,24 @@ describe('buildHTML', () => {
     assert.ok(html.includes('"hasGitHub":false'));
   });
 
-  it('includes marked.js CDN script tag', () => {
+  it('loads marked + DOMPurify from CDN, version-pinned with Subresource Integrity', () => {
     const html = buildHTML(baseConfig);
-    assert.ok(html.includes('cdn.jsdelivr.net/npm/marked/marked.min.js'));
+    // Pinned to exact immutable versions (floating "latest"/major URLs cannot be SRI-verified).
+    assert.ok(html.includes('cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js'), 'marked must be version-pinned');
+    assert.ok(html.includes('cdn.jsdelivr.net/npm/dompurify@3.4.11/dist/purify.min.js'), 'DOMPurify must be version-pinned');
+    // No floating CDN URL may slip back in — that would silently disable integrity checking.
+    assert.ok(!html.includes('npm/marked/marked.min.js'), 'marked must not be loaded unversioned');
+    assert.ok(!html.includes('npm/dompurify@3/dist'), 'DOMPurify must not be loaded at a floating major');
+    // SRI hash + crossorigin are load-bearing security attributes: without them a compromised
+    // CDN response (e.g. a neutered DOMPurify.sanitize) silently bypasses the XSS fix (#262/#263).
+    assert.ok(html.includes('integrity="sha384-948ahk4ZmxYVYOc+rxN1H2gM1EJ2Duhp7uHtZ4WSLkV4Vtx5MUqnV+l7u9B+jFv+"'), 'marked SRI hash must match the pinned bytes');
+    assert.ok(html.includes('integrity="sha384-o44XUELLEnv/iSlA1NWxBweqbD4TSR0qgq2VzVsxtkHS989JJjGKSE9vkfo5MN4K"'), 'DOMPurify SRI hash must match the pinned bytes');
+    const tags = html.match(/<script src="https:\/\/cdn\.jsdelivr\.net[^>]*><\/script>/g) || [];
+    assert.equal(tags.length, 2, 'expected exactly the two pinned CDN script tags');
+    for (const tag of tags) {
+      assert.ok(tag.includes('integrity="sha384-'), `CDN script tag missing SRI: ${tag}`);
+      assert.ok(tag.includes('crossorigin="anonymous"'), `CDN script tag missing crossorigin (SRI fails without it): ${tag}`);
+    }
   });
 
   it('includes all CSS sections', () => {
