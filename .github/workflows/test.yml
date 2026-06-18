@@ -13,7 +13,16 @@ jobs:
         with:
           node-version: "22"
       - run: npm install
+      # SKIP_LIVE_TESTS=1 skips the opt-in tests that hit the live Archive.org
+      # metadata API (content-validator-layer-c.test.js, extractor-archive-org.test.js).
+      # Those make CI depend on archive.org being reachable on every PR and
+      # false-green on their graceful fallbacks when it isn't. The Layer C
+      # integration wiring is covered deterministically by
+      # content-validator-layer-c-hermetic.test.js; run the live tests locally
+      # (npm test without this env var) to verify against the real API.
       - run: npm test
+        env:
+          SKIP_LIVE_TESTS: "1"
 
   python-tests:
     runs-on: ubuntu-latest
