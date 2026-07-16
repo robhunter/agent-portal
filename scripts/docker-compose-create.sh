@@ -139,6 +139,7 @@ services:
     command: >-
       mitmweb --mode wireguard --web-host 0.0.0.0
       --set web_password=$MITMPROXY_WEB_PASSWORD
+      --ignore-hosts '(^|\.)mongodb\.net(:[0-9]+)?\$\$'
       -s /scripts/mitmproxy_addon.py
     ports:
       - "8081"
