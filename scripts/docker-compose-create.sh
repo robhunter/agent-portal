@@ -257,30 +257,79 @@ fi
 # ── Run setup inside agent container ──────────────────────────────────────
 COMPOSE="docker compose -f $STACK_DIR/docker-compose.yml"
 
+# Every step below installs into the agent container's WRITABLE LAYER — the
+# image is bare ubuntu:24.04. A recreate therefore returns the container to a
+# state with no node, no claude and no npm deps, and this script is the only
+# thing that puts them back. That makes it critical that a step which cannot
+# finish is reported as a failure rather than waited on forever.
+#
+# It hangs rather than fails when egress stalls. `nvm install --lts`
+# (vm-setup.sh) fetches from nodejs.org through the WireGuard/mitmproxy chain;
+# if packets are dropped rather than refused, curl waits indefinitely, this
+# script never reaches the final restart below, and the caller sees a rebuild
+# that runs forever. Flenderson spawns this script with no timeout of its own,
+# so its job stays "running" and its UI never reports an outcome.
+#
+# `timeout` runs INSIDE the container (Ubuntu coreutils) so this works from a
+# macOS host, where `timeout` is not present by default. Exit 124 = timed out.
+SETUP_TIMEOUT="${SETUP_TIMEOUT:-600}"
+
+# Run a setup step in the agent container under a timeout, and fail loudly.
+run_setup_step() {
+    local label="$1"; shift
+    local rc=0
+    $COMPOSE exec -T agent timeout "$SETUP_TIMEOUT" bash -c "$1" || rc=$?
+    if [ "$rc" -eq 124 ]; then
+        echo "ERROR: '$label' exceeded ${SETUP_TIMEOUT}s and was killed." >&2
+        echo "  The step stalled rather than failed — usually egress through the" >&2
+        echo "  mitmproxy/WireGuard chain dropping packets for the host it fetches from." >&2
+        echo "  Check egress:  $COMPOSE exec agent curl -sS -m 10 -o /dev/null -w '%{http_code}\\n' https://nodejs.org/dist/index.json" >&2
+        echo "  Raise the bound with SETUP_TIMEOUT=<seconds> if the step is merely slow." >&2
+        exit 124
+    elif [ "$rc" -ne 0 ]; then
+        echo "ERROR: '$label' failed (exit $rc)." >&2
+        exit "$rc"
+    fi
+}
+
 echo ""
 echo "Installing system packages..."
-$COMPOSE exec -T agent bash -c \
+run_setup_step "Installing system packages" \
     "DEBIAN_FRONTEND=noninteractive apt-get update -qq && \
      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq git cron ca-certificates > /dev/null 2>&1 && \
      update-ca-certificates 2>/dev/null"
 
 echo "Setting container timezone to $AGENT_TIMEZONE..."
-$COMPOSE exec -T agent bash -c \
+run_setup_step "Setting container timezone" \
     "ln -sf /usr/share/zoneinfo/$AGENT_TIMEZONE /etc/localtime && \
      echo $AGENT_TIMEZONE > /etc/timezone"
 
 echo "Running vm-setup.sh..."
-$COMPOSE exec -T agent bash -c \
+run_setup_step "Running vm-setup.sh" \
     "for f in /etc/profile.d/sandcat-*.sh; do [ -r \"\$f\" ] && source \"\$f\"; done; \
      cd $CONTAINER_AGENT_DIR && \
      bash $CONTAINER_FRAMEWORK_DIR/scripts/vm-setup.sh"
 
 echo "Installing framework dependencies..."
-$COMPOSE exec -T agent bash -c \
+run_setup_step "Installing framework dependencies" \
     "for f in /etc/profile.d/sandcat-*.sh; do [ -r \"\$f\" ] && source \"\$f\"; done; \
      source ~/.nvm/nvm.sh && \
      cd $CONTAINER_FRAMEWORK_DIR && \
      npm install --production"
+
+# ── Verify the runtime actually landed ────────────────────────────────────
+# vm-setup.sh guards each install with `command -v`, so a step that half-ran
+# can leave the container without node while every exit code is still 0. The
+# agent is useless in that state — no cycles, no portal — so assert it here
+# instead of discovering it hours later in supervisor.log.
+echo "Verifying node, npm and claude are installed..."
+if ! $COMPOSE exec -T agent timeout 60 bash -c \
+    'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; \
+     node --version && npm --version && claude --version' ; then
+    echo "ERROR: setup reported success but the runtime is not usable in the container." >&2
+    echo "  Inspect with:  $COMPOSE exec agent bash -c 'export NVM_DIR=\$HOME/.nvm; . \$NVM_DIR/nvm.sh; nvm ls'" >&2
+    exit 1
+fi
 
 # ── Restart agent service for clean boot ──────────────────────────────────
 echo ""
