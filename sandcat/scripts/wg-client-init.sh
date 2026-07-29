@@ -54,11 +54,16 @@ mitmproxy_ip=$(getent hosts mitmproxy | awk '{print $1}')
 # docker-compose `sysctls` option.
 ip link add wg0 type wireguard
 
+# persistent-keepalive makes WireGuard initiate the handshake itself rather
+# than waiting for the first outbound packet to trigger it. Without it the
+# tunnel is configured but idle, and the readiness signal below would have
+# nothing to wait on.
 wg set wg0 \
     private-key <(echo "$client_private_key") \
     fwmark 51820 \
     peer "$server_public_key" \
         endpoint mitmproxy:51820 \
+        persistent-keepalive 25 \
         allowed-ips 0.0.0.0/0,::/0
 
 ip address add 10.0.0.1/32 dev wg0
@@ -147,6 +152,42 @@ if [ -n "$docker_network_v6" ]; then
     ip6tables -A OUTPUT -o eth0 -d "$docker_network_v6" -j ACCEPT
 fi
 ip6tables -A OUTPUT -o eth0 -j DROP
+
+# ── Wait for the tunnel to actually carry traffic ───────────────────────────
+# The compose healthcheck is `test -f /tmp/wg-ready`, and docker-compose-create.sh
+# begins installing into the agent container the moment that healthcheck passes.
+# Signalling here on configuration alone is a lie: WireGuard's handshake is lazy,
+# so the rules can be in place while the tunnel has never exchanged a packet.
+# Small requests then trigger the handshake and survive a retry, while a large
+# sustained transfer started in that window stalls — which is how a rebuild ends
+# up hanging on the ~28MB node tarball while apt and the nvm installer succeeded.
+#
+# `wg show wg0 latest-handshakes` reports a unix timestamp per peer, 0 until the
+# first successful handshake. That is the exact condition, not a proxy for it —
+# and it needs no tooling beyond wireguard-tools, which is all this image has
+# (no curl, no ping).
+HANDSHAKE_TIMEOUT="${HANDSHAKE_TIMEOUT:-30}"
+echo "Waiting for WireGuard handshake (timeout ${HANDSHAKE_TIMEOUT}s)..."
+handshake_ok=false
+elapsed=0
+while [ "$elapsed" -lt "$HANDSHAKE_TIMEOUT" ]; do
+    # Fields: <peer-public-key>\t<unix-timestamp>. Any non-zero timestamp means
+    # a handshake completed, so the tunnel is passing traffic.
+    if wg show wg0 latest-handshakes 2>/dev/null | awk '{ if ($2 + 0 > 0) found = 1 } END { exit found ? 0 : 1 }'; then
+        handshake_ok=true
+        break
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+done
+
+if [ "$handshake_ok" != true ]; then
+    echo "ERROR: no WireGuard handshake within ${HANDSHAKE_TIMEOUT}s — the tunnel is configured but not passing traffic." >&2
+    echo "  Refusing to signal readiness; a stack started now would stall on the first large transfer." >&2
+    wg show wg0 >&2 || true
+    exit 1
+fi
+echo "  WireGuard handshake confirmed after ${elapsed}s"
 
 # Signal readiness to containers waiting on the healthcheck.
 touch /tmp/wg-ready
