@@ -59,6 +59,23 @@ else
   echo "--- Claude Code already installed: $(claude --version 2>/dev/null || echo 'unknown version') ---"
 fi
 
+# Step 2b: Codex CLI — only for agents whose harness is codex. Claude-only
+# agents skip this; there is no reason to carry a second harness they never
+# invoke. Run from the agent directory, so ./portal.config.json is the agent's.
+if grep -q '"type"[[:space:]]*:[[:space:]]*"codex"' portal.config.json 2>/dev/null; then
+  if ! command -v codex &>/dev/null; then
+    echo "--- Installing Codex CLI ---"
+    npm install -g @openai/codex
+    echo ""
+    echo "    NOTE: Codex still needs a one-time interactive login:"
+    echo "      codex login --device-auth"
+    echo "    Credentials land in ~/.codex/auth.json (bind-mounted from the host)."
+    echo ""
+  else
+    echo "--- Codex already installed: $(codex --version 2>/dev/null || echo 'unknown version') ---"
+  fi
+fi
+
 # Step 3: GitHub CLI
 if ! command -v gh &>/dev/null; then
   echo "--- Installing GitHub CLI ---"

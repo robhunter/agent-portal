@@ -266,6 +266,20 @@ case "$HARNESS_TYPE" in
     date -Iseconds > "$AUTH_CONFIRMED_FILE" 2>/dev/null || true
     step "letta auth assumed (static API key)"
     ;;
+  codex)
+    # Codex caches a ChatGPT-subscription login at ~/.codex/auth.json and
+    # refreshes it automatically. There is no non-interactive status command, so
+    # presence of the credential file is the check. Its absence is fatal for the
+    # cycle and needs a human (`codex login --device-auth`), so say so loudly.
+    if [ -s "${CODEX_HOME:-$HOME/.codex}/auth.json" ]; then
+      date -Iseconds > "$AUTH_CONFIRMED_FILE" 2>/dev/null || true
+      step "codex auth present (${CODEX_HOME:-$HOME/.codex}/auth.json)"
+    else
+      step "codex auth MISSING — run 'codex login --device-auth' in this container"
+      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" error \
+        "Codex credentials missing at ${CODEX_HOME:-$HOME/.codex}/auth.json; cycle will fail until a human re-authenticates"
+    fi
+    ;;
   *)
     step "auth check skipped (harness type: $HARNESS_TYPE)"
     ;;
