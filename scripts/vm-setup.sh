@@ -48,28 +48,51 @@ echo ""
 NODE_SPEC="--lts"
 NODE_SOURCE="latest LTS"
 if [ -f "$AGENT_DIR/.nvmrc" ]; then
-  NODE_SPEC="$(tr -d '[:space:]' < "$AGENT_DIR/.nvmrc")"
+  # [[:space:]] — the inner brackets are required. `tr -d '[:space:]'` deletes
+  # the literal characters [ : s p a c e ], which silently mangles a spec like
+  # lts/jod into lt/jod.
+  NODE_SPEC="$(tr -d '[[:space:]]' < "$AGENT_DIR/.nvmrc")"
   NODE_SOURCE="$AGENT_DIR/.nvmrc"
 fi
+
+# nvm.sh is not safe to source under `set -e`. When a .nvmrc sits in the working
+# directory — which it does here, because this script cd's into the agent dir —
+# sourcing it performs an auto-use that returns 3 for a version not yet
+# installed, and `set -e` turns that into a fatal abort before nvm is even
+# usable. Every source below is bracketed accordingly.
+nvm_load() {
+  export NVM_DIR="$HOME/.nvm"
+  set +e
+  # shellcheck disable=SC1091
+  [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+  set -e
+  command -v nvm >/dev/null 2>&1 || { echo "ERROR: nvm did not load from $NVM_DIR" >&2; return 1; }
+}
 
 if ! command -v node &>/dev/null; then
   echo "--- Installing nvm and Node.js ($NODE_SPEC, from $NODE_SOURCE) ---"
   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-  export NVM_DIR="$HOME/.nvm"
-  [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-  nvm install $NODE_SPEC
+  nvm_load
+  nvm install "$NODE_SPEC"
   nvm alias default "$(nvm current)"
+  echo "  node $(node --version) (default: $(nvm current))"
   echo ""
 else
   echo "--- Node.js already installed: $(node --version) ---"
-  # Already installed but pinned elsewhere — say so rather than letting a
+  # Already installed but pinned elsewhere — realign rather than letting a
   # silent mismatch surface later as a CI-only failure.
-  if [ -f "$AGENT_DIR/.nvmrc" ]; then
-    export NVM_DIR="$HOME/.nvm"
-    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-    if ! node --version | grep -q "^v${NODE_SPEC#v}"; then
+  #
+  # Best-effort on purpose: node can be present without nvm (a system package,
+  # a base image). Failing to realign is worth a warning, not a dead setup —
+  # the agent still has a working node.
+  if [ -f "$AGENT_DIR/.nvmrc" ] && ! node --version | grep -q "^v${NODE_SPEC#v}\."; then
+    if nvm_load; then
       echo "--- .nvmrc wants $NODE_SPEC, have $(node --version) — installing ---"
-      nvm install "$NODE_SPEC" && nvm alias default "$NODE_SPEC"
+      nvm install "$NODE_SPEC"
+      nvm alias default "$NODE_SPEC"
+      echo "  now on $(node --version)"
+    else
+      echo "WARNING: .nvmrc wants $NODE_SPEC but nvm is unavailable; staying on $(node --version)" >&2
     fi
   fi
 fi
