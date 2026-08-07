@@ -39,15 +39,39 @@ echo "Framework directory: $FRAMEWORK_DIR"
 echo ""
 
 # Step 1: Node.js via nvm
+#
+# An agent that builds someone else's repo needs the version THAT repo's CI
+# uses, not whatever `--lts` resolves to this month. fleethd-coder hit exactly
+# this: its container came up on 24.19.0 while fleet-hd-wrench-core's pipeline
+# pins 22.x, so every "green here" carried an unstated caveat. Drop a .nvmrc in
+# the agent repo to pin it; agents that do not care keep getting --lts.
+NODE_SPEC="--lts"
+NODE_SOURCE="latest LTS"
+if [ -f "$AGENT_DIR/.nvmrc" ]; then
+  NODE_SPEC="$(tr -d '[:space:]' < "$AGENT_DIR/.nvmrc")"
+  NODE_SOURCE="$AGENT_DIR/.nvmrc"
+fi
+
 if ! command -v node &>/dev/null; then
-  echo "--- Installing nvm and Node.js ---"
+  echo "--- Installing nvm and Node.js ($NODE_SPEC, from $NODE_SOURCE) ---"
   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
   export NVM_DIR="$HOME/.nvm"
   [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-  nvm install --lts
+  nvm install $NODE_SPEC
+  nvm alias default "$(nvm current)"
   echo ""
 else
   echo "--- Node.js already installed: $(node --version) ---"
+  # Already installed but pinned elsewhere — say so rather than letting a
+  # silent mismatch surface later as a CI-only failure.
+  if [ -f "$AGENT_DIR/.nvmrc" ]; then
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    if ! node --version | grep -q "^v${NODE_SPEC#v}"; then
+      echo "--- .nvmrc wants $NODE_SPEC, have $(node --version) — installing ---"
+      nvm install "$NODE_SPEC" && nvm alias default "$NODE_SPEC"
+    fi
+  fi
 fi
 
 # Step 2: Claude Code
