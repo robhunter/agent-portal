@@ -6,6 +6,11 @@
 # Exports: HARNESS_TYPE, HARNESS_CMD, HARNESS_EXTRA_FLAGS, DATA_DIR
 # Defaults: claude-code harness, DATA_DIR="." (backwards-compatible with the
 # pre-dataDir layout where all framework state lives at the agent root).
+#
+# Known harness types: claude-code, letta-code, goose, codex. Only claude-code
+# gets default extraFlags here — the others point `command` at a wrapper script
+# in the agent's own repo that carries its flags, since those flags depend on
+# paths that only exist inside the agent's container.
 
 AGENT_DIR="${1:-.}"
 PORTAL_CONFIG="$AGENT_DIR/portal.config.json"

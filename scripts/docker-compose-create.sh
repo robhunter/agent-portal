@@ -105,6 +105,11 @@ echo "  Settings file:       $SETTINGS_FILE"
 STACK_DIR="$HOME/sandcat-stacks/$AGENT_NAME"
 mkdir -p "$STACK_DIR"
 
+# Harness credential stores are bind-mounted from the host so a login survives
+# container recreation. Create them up front — a bind mount of a missing path
+# makes Docker invent a root-owned directory, which then fails the login write.
+mkdir -p "$HOME/.claude" "$HOME/.codex"
+
 # ── Generate compose .env ─────────────────────────────────────────────────
 # Docker Compose reads .env automatically for variable substitution in yml.
 # Preserve existing web password if already generated.
@@ -185,12 +190,17 @@ services:
       - $AGENT_DIR:$CONTAINER_AGENT_DIR
       - $FRAMEWORK_DIR:$CONTAINER_FRAMEWORK_DIR
       - ${HOME}/.claude:/root/.claude
+      - ${HOME}/.codex:/root/.codex
       - sandcat-certs:/sandcat-certs:ro
     entrypoint: ["bash", "$CONTAINER_FRAMEWORK_DIR/sandcat/scripts/app-init.sh", "$CONTAINER_AGENT_DIR"]
     environment:
       - TZ=$AGENT_TIMEZONE
       - CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
       - NODE_EXTRA_CA_CERTS=/sandcat-certs/mitmproxy-ca-cert.pem
+      # Codex is a Rust binary and ignores NODE_EXTRA_CA_CERTS and the system
+      # trust store. Without this it cannot complete a TLS handshake through
+      # mitmproxy — every request, including the device-auth login, fails.
+      - CODEX_CA_CERTIFICATE=/sandcat-certs/mitmproxy-ca-cert.pem
     restart: unless-stopped
     depends_on:
       wg-client:
