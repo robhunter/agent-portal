@@ -110,6 +110,23 @@ mkdir -p "$STACK_DIR"
 # makes Docker invent a root-owned directory, which then fails the login write.
 mkdir -p "$HOME/.claude" "$HOME/.codex"
 
+# ── Optional extra bind mounts ────────────────────────────────────────────
+# portal.config.json may declare `mounts: { "<host path>": "<container path>" }`.
+# fleethd-coder uses this for the fleethd-app checkout: that repo cannot be
+# built in the container (no aarch64-Linux Android NDK), so Gradle and Metro run
+# on the host against the SAME directory the agent edits. The shared checkout is
+# the whole mechanism — a private clone would have the host building code the
+# agent never wrote.
+EXTRA_MOUNTS=""
+if [ -f "$AGENT_DIR/portal.config.json" ] && command -v node >/dev/null 2>&1; then
+    EXTRA_MOUNTS=$(node -e '
+      const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf-8"));
+      for (const [h, g] of Object.entries(c.mounts || {})) {
+        console.log("      - " + h.replace(/^~/, process.env.HOME) + ":" + g);
+      }' "$AGENT_DIR/portal.config.json")
+    [ -n "$EXTRA_MOUNTS" ] && echo "  Extra mounts:" && echo "$EXTRA_MOUNTS"
+fi
+
 # ── Generate compose .env ─────────────────────────────────────────────────
 # Docker Compose reads .env automatically for variable substitution in yml.
 # Preserve existing web password if already generated.
@@ -191,6 +208,7 @@ services:
       - $FRAMEWORK_DIR:$CONTAINER_FRAMEWORK_DIR
       - ${HOME}/.claude:/root/.claude
       - ${HOME}/.codex:/root/.codex
+$EXTRA_MOUNTS
       - sandcat-certs:/sandcat-certs:ro
     entrypoint: ["bash", "$CONTAINER_FRAMEWORK_DIR/sandcat/scripts/app-init.sh", "$CONTAINER_AGENT_DIR"]
     environment:
@@ -201,6 +219,10 @@ services:
       # trust store. Without this it cannot complete a TLS handshake through
       # mitmproxy — every request, including the device-auth login, fails.
       - CODEX_CA_CERTIFICATE=/sandcat-certs/mitmproxy-ca-cert.pem
+      # adb speaks to the HOST's adb server; the client here is only a
+      # client. Set unconditionally — harmless where adb is not installed.
+      - ANDROID_ADB_SERVER_ADDRESS=host.docker.internal
+      - ANDROID_ADB_SERVER_PORT=5037
     restart: unless-stopped
     depends_on:
       wg-client:

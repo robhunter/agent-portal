@@ -123,6 +123,26 @@ if grep -q '"type"[[:space:]]*:[[:space:]]*"codex"' portal.config.json 2>/dev/nu
   fi
 fi
 
+# Step 2c: adb — only for agents that declare a device mount.
+#
+# The container never runs an Android build; it has no NDK and could not. What
+# it needs is the adb CLIENT, which talks to the adb SERVER on the host via
+# ANDROID_ADB_SERVER_ADDRESS. That is enough to install, drive and screenshot an
+# emulator running on the Mac. Gated on `mounts` being declared so no other
+# agent carries an Android toolchain it never invokes.
+if grep -q '"mounts"' portal.config.json 2>/dev/null; then
+  if ! command -v adb &>/dev/null; then
+    echo "--- Installing adb (client only; the server runs on the host) ---"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq android-sdk-platform-tools-common adb \
+      >/dev/null 2>&1 || apt-get install -y -qq adb >/dev/null 2>&1 || \
+      echo "WARNING: adb install failed — mobile work will be blocked"
+    command -v adb >/dev/null && echo "  $(adb --version 2>/dev/null | head -1)"
+    echo ""
+  else
+    echo "--- adb already installed: $(adb --version 2>/dev/null | head -1) ---"
+  fi
+fi
+
 # Step 3: GitHub CLI
 if ! command -v gh &>/dev/null; then
   echo "--- Installing GitHub CLI ---"
