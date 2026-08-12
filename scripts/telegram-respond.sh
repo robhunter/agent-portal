@@ -22,7 +22,7 @@ done
 
 # Source .env if present (pre-Sandcat containers use .env for secrets)
 if [ -f "$AGENT_DIR/.env" ]; then
-  set -a; . "$AGENT_DIR/.env"; set +a
+  . "$FRAMEWORK_DIR/scripts/load-env.sh"; load_agent_env "$AGENT_DIR/.env"
 fi
 
 # Read agent config

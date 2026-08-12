@@ -86,7 +86,7 @@ main() {
 
   # Source .env for credentials if not already in environment
   if [ -z "$TELEGRAM_TOKEN" ] && [ -f "$AGENT_DIR/.env" ]; then
-    set -a; . "$AGENT_DIR/.env"; set +a
+    . "$FRAMEWORK_DIR/scripts/load-env.sh"; load_agent_env "$AGENT_DIR/.env"
   fi
 
   if [ -z "$TELEGRAM_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
