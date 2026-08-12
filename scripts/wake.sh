@@ -34,7 +34,7 @@ done
 
 # Source .env if present (pre-Sandcat containers use .env for secrets)
 if [ -f "$AGENT_DIR/.env" ]; then
-  set -a; . "$AGENT_DIR/.env"; set +a
+  . "$FRAMEWORK_DIR/scripts/load-env.sh"; load_agent_env "$AGENT_DIR/.env"
   step ".env sourced (GH_TOKEN=$( [ -n "${GH_TOKEN:-}" ] && echo set || echo MISSING ))"
 else
   step ".env not found at $AGENT_DIR/.env (skipping — using container environment)"

@@ -313,10 +313,32 @@ run_setup_step() {
     $COMPOSE exec -T agent timeout "$SETUP_TIMEOUT" bash -c "$1" || rc=$?
     if [ "$rc" -eq 124 ]; then
         echo "ERROR: '$label' exceeded ${SETUP_TIMEOUT}s and was killed." >&2
-        echo "  The step stalled rather than failed — usually egress through the" >&2
-        echo "  mitmproxy/WireGuard chain dropping packets for the host it fetches from." >&2
-        echo "  Check egress:  $COMPOSE exec agent curl -sS -m 10 -o /dev/null -w '%{http_code}\\n' https://nodejs.org/dist/index.json" >&2
-        echo "  Raise the bound with SETUP_TIMEOUT=<seconds> if the step is merely slow." >&2
+        echo "" >&2
+        # This message used to assert egress as the cause and print an egress
+        # probe. The one time it mattered, egress was perfect (30MB at 13MB/s)
+        # and the real cause was a `PWD=` line in the agent's .env sending nvm's
+        # .nvmrc search into an infinite loop. Naming a likely cause reads as a
+        # diagnosis, and two people chased the network for an afternoon on the
+        # strength of it. A bound that cannot say WHICH command stalled should
+        # not guess — it should say how to find out.
+        echo "  The step stalled rather than failed, so the cause is whatever it was" >&2
+        echo "  running when the clock ran out. Get that first — do not assume:" >&2
+        echo "" >&2
+        echo "    $COMPOSE exec -T agent timeout 120 bash -c 'cd $CONTAINER_AGENT_DIR && bash -x <the script> 2>&1'" >&2
+        echo "" >&2
+        echo "  The last '+' line it prints is the command that hung. Common causes," >&2
+        echo "  in the order they have actually occurred:" >&2
+        echo "    - .env assigns a shell-reserved name (PWD, HOME, PATH). Sourcing it" >&2
+        echo "      corrupts the shell itself and hangs something unrelated later." >&2
+        echo "      scripts/load-env.sh now warns and ignores these; check the output." >&2
+        echo "    - egress genuinely stalling through the mitmproxy/WireGuard chain." >&2
+        echo "      Test with a LARGE body, not a small one — a fast index.json says" >&2
+        echo "      nothing about a 30MB tarball:" >&2
+        echo "      $COMPOSE exec -T agent curl -sS -m 120 -o /dev/null -w '%{speed_download}B/s\\n' https://nodejs.org/dist/index.tab" >&2
+        echo "    - a step waiting on stdin it will never receive." >&2
+        echo "" >&2
+        echo "  Raise the bound with SETUP_TIMEOUT=<seconds> only once you know it is" >&2
+        echo "  genuinely slow rather than stuck." >&2
         exit 124
     elif [ "$rc" -ne 0 ]; then
         echo "ERROR: '$label' failed (exit $rc)." >&2

@@ -13,7 +13,7 @@ export NVM_DIR="$HOME/.nvm"
 
 # Source .env
 if [ -f "$AGENT_DIR/.env" ]; then
-  set -a; . "$AGENT_DIR/.env"; set +a
+  . "$FRAMEWORK_DIR/scripts/load-env.sh"; load_agent_env "$AGENT_DIR/.env"
 fi
 
 # Read agent config

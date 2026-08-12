@@ -17,7 +17,7 @@ done
 
 # Source .env if GH_TOKEN still not set (pre-Sandcat fallback)
 if [ -z "$GH_TOKEN" ] && [ -f "$AGENT_DIR/.env" ]; then
-  set -a; . "$AGENT_DIR/.env"; set +a
+  . "$FRAMEWORK_DIR/scripts/load-env.sh"; load_agent_env "$AGENT_DIR/.env"
 fi
 
 # Read agent config
