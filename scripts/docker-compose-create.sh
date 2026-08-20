@@ -112,11 +112,10 @@ mkdir -p "$HOME/.claude" "$HOME/.codex"
 
 # ── Optional extra bind mounts ────────────────────────────────────────────
 # portal.config.json may declare `mounts: { "<host path>": "<container path>" }`.
-# fleethd-coder uses this for the fleethd-app checkout: that repo cannot be
-# built in the container (no aarch64-Linux Android NDK), so Gradle and Metro run
-# on the host against the SAME directory the agent edits. The shared checkout is
-# the whole mechanism — a private clone would have the host building code the
-# agent never wrote.
+# This is for an agent whose project cannot be built inside the container: the
+# host toolchain runs against the SAME directory the agent edits. The shared
+# checkout is the whole mechanism — a private clone would have the host building
+# code the agent never wrote.
 EXTRA_MOUNTS=""
 if [ -f "$AGENT_DIR/portal.config.json" ] && command -v node >/dev/null 2>&1; then
     EXTRA_MOUNTS=$(node -e '
