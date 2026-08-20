@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { expandField, isCycleLocked } = require('../lib/cron');
+const { expandField, isCycleLocked, getNextRun } = require('../lib/cron');
 
 describe('expandField', () => {
   it('expands wildcard', () => {
@@ -92,5 +92,57 @@ describe('isCycleLocked', () => {
     } finally {
       try { fs.unlinkSync(markerFile); } catch {}
     }
+  });
+});
+
+describe('getNextRun enabled flag', () => {
+  // Every assertion here is on `enabled` alone, because it is the one field that
+  // does not depend on whether a cron daemon happens to be alive in the
+  // environment running the tests.
+  const withCronFile = (contents, fn) => {
+    const file = path.join(os.tmpdir(), `test-cron-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    fs.writeFileSync(file, contents);
+    try {
+      fn(file);
+    } finally {
+      try { fs.unlinkSync(file); } catch {}
+    }
+  };
+
+  const WAKE = '0 */2 * * * root /root/workspaces/agent-portal/scripts/wake.sh /root/a >> /log 2>&1';
+
+  it('reports enabled for a live wake line', () => {
+    withCronFile(`SHELL=/bin/bash\n${WAKE}\n`, (file) => {
+      assert.equal(getNextRun(file).enabled, true);
+    });
+  });
+
+  it('reports disabled for a commented-out wake line', () => {
+    withCronFile(`SHELL=/bin/bash\n# ${WAKE}\n`, (file) => {
+      assert.equal(getNextRun(file).enabled, false);
+    });
+  });
+
+  it('reports disabled for an INDENTED commented-out wake line', () => {
+    // The comment test used to be anchored at column 0, so an indented "#" read
+    // as a live schedule — and the tab favicon promised runs that were switched
+    // off.
+    withCronFile(`SHELL=/bin/bash\n  # ${WAKE}\n`, (file) => {
+      assert.equal(getNextRun(file).enabled, false);
+    });
+  });
+
+  it('reports disabled when there is no wake entry at all', () => {
+    withCronFile('SHELL=/bin/bash\n0 3 * * * root /usr/bin/something-else\n', (file) => {
+      assert.equal(getNextRun(file).enabled, false);
+    });
+  });
+
+  it('leaves `enabled` out entirely when no cron file is installed', () => {
+    // Nothing downstream may read a missing file as "switched off" — `installed`
+    // already covers it, and faviconState only treats an explicit false as off.
+    const result = getNextRun(path.join(os.tmpdir(), 'test-cron-does-not-exist'));
+    assert.equal(result.installed, false);
+    assert.equal('enabled' in result, false);
   });
 });

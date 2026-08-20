@@ -93,6 +93,9 @@ describe('Full portal integration', () => {
     assert.ok(data.git);
     assert.ok(data.serverTime);
     assert.ok('cycleRunning' in data);
+    // The favicon reads this to decide between "scheduled" and "degraded", so it
+    // has to be present even when there is no event history to judge.
+    assert.ok('lastCycleErrored' in data);
   });
 
   it('GET /api/next-run returns cron info', async () => {
