@@ -41,10 +41,10 @@ echo ""
 # Step 1: Node.js via nvm
 #
 # An agent that builds someone else's repo needs the version THAT repo's CI
-# uses, not whatever `--lts` resolves to this month. fleethd-coder hit exactly
-# this: its container came up on 24.19.0 while fleet-hd-wrench-core's pipeline
-# pins 22.x, so every "green here" carried an unstated caveat. Drop a .nvmrc in
-# the agent repo to pin it; agents that do not care keep getting --lts.
+# uses, not whatever `--lts` resolves to this month — a container on a newer
+# major than the target pipeline makes every "green here" carry an unstated
+# caveat. Drop a .nvmrc in the agent repo to pin it; agents that do not care
+# keep getting --lts.
 NODE_SPEC="--lts"
 NODE_SOURCE="latest LTS"
 if [ -f "$AGENT_DIR/.nvmrc" ]; then
