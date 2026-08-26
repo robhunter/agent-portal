@@ -31,8 +31,45 @@ DATA_DIR="${DATA_DIR:-.}"
 JOURNAL_PATH="$AGENT_DIR/$DATA_DIR/journals/$JOURNAL_FILE"
 mkdir -p "$(dirname "$JOURNAL_PATH")"
 
+if printf '%s\n' "$CONTENT" | grep -q '^### '; then
+  OFFENDERS="$(printf '%s\n' "$CONTENT" | grep -n '^### ' | head -5)"
+  if [ "${JOURNAL_STRICT:-0}" = "1" ]; then
+    {
+      echo "Error: entry body contains '### ' at the start of a line."
+      echo "The portal's journal parser treats those as entry headers and discards"
+      echo "everything after them. Use '## ', '#### ', or a bold lead-in instead."
+      echo "Offending lines:"
+      echo "$OFFENDERS"
+    } >&2
+    exit 1
+  fi
+  {
+    echo "log-journal.sh: WARNING — demoted $(printf '%s\n' "$CONTENT" | grep -c '^### ') '### ' heading(s) to '#### '."
+    echo "  '### ' at line start is the journal entry delimiter; the portal's parser would"
+    echo "  have silently dropped this entry's body from that point on. Content preserved."
+    echo "  Use '## ', '#### ' or a bold lead-in to avoid this. JOURNAL_STRICT=1 to fail instead."
+    echo "$OFFENDERS"
+  } >&2
+  CONTENT="$(printf '%s\n' "$CONTENT" | sed 's/^### /#### /')"
+fi
+
 {
   echo ""
   echo "### $(date -Iseconds) | $AUTHOR | $TAG"
   echo "$CONTENT"
 } >> "$JOURNAL_PATH"
+
+if command -v node >/dev/null 2>&1 && [ -f "$FRAMEWORK_DIR/lib/helpers.js" ]; then
+  node -e '
+    const { parseJournal } = require(process.argv[1]);
+    const fs = require("fs");
+    const entries = parseJournal(fs.readFileSync(process.argv[2], "utf-8"));
+    const last = entries[entries.length - 1];
+    if (!last) { console.error("log-journal.sh: WARNING — parser read back 0 entries."); process.exit(0); }
+    const written = parseInt(process.argv[3], 10);
+    if (last.content.length < written - 8) {
+      console.error("log-journal.sh: WARNING — round-trip check: wrote " + written +
+        " chars, parser reads back " + last.content.length + ". Entry is being truncated.");
+    }
+  ' "$FRAMEWORK_DIR/lib/helpers.js" "$JOURNAL_PATH" "${#CONTENT}" >&2 || true
+fi
