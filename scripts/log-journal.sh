@@ -31,21 +31,6 @@ DATA_DIR="${DATA_DIR:-.}"
 JOURNAL_PATH="$AGENT_DIR/$DATA_DIR/journals/$JOURNAL_FILE"
 mkdir -p "$(dirname "$JOURNAL_PATH")"
 
-# --- Entry-body guard -------------------------------------------------------
-#
-# parseJournal() (lib/helpers.js) splits journal files on /^### /m and keeps a
-# chunk only when its first line matches "<ts> | <author> | <tag>". There is no
-# else branch, so an ordinary markdown "### " subheading inside an entry body
-# ends that entry at read time and everything after it is discarded silently.
-#
-# The write itself always succeeds, which is why nothing ever surfaced: the
-# bytes land on disk correctly and only the reader disagrees. So the writer is
-# the right place to catch it — this is the only point where we still know what
-# the author meant.
-#
-# We demote rather than reject. Losing a heading level is cosmetic; refusing the
-# write risks an agent's whole cycle entry disappearing because a wrapper ran
-# under `set -e` and never retried. Set JOURNAL_STRICT=1 to fail instead.
 if printf '%s\n' "$CONTENT" | grep -q '^### '; then
   OFFENDERS="$(printf '%s\n' "$CONTENT" | grep -n '^### ' | head -5)"
   if [ "${JOURNAL_STRICT:-0}" = "1" ]; then
@@ -74,9 +59,6 @@ fi
   echo "$CONTENT"
 } >> "$JOURNAL_PATH"
 
-# Verify the entry we just wrote is readable by the parser that will render it.
-# A writer that cannot prove its own output survives a round-trip is how 386
-# sections went missing in the first place.
 if command -v node >/dev/null 2>&1 && [ -f "$FRAMEWORK_DIR/lib/helpers.js" ]; then
   node -e '
     const { parseJournal } = require(process.argv[1]);
@@ -85,7 +67,6 @@ if command -v node >/dev/null 2>&1 && [ -f "$FRAMEWORK_DIR/lib/helpers.js" ]; th
     const last = entries[entries.length - 1];
     if (!last) { console.error("log-journal.sh: WARNING — parser read back 0 entries."); process.exit(0); }
     const written = parseInt(process.argv[3], 10);
-    // Allow a small delta for trailing-whitespace trimming by the parser.
     if (last.content.length < written - 8) {
       console.error("log-journal.sh: WARNING — round-trip check: wrote " + written +
         " chars, parser reads back " + last.content.length + ". Entry is being truncated.");
