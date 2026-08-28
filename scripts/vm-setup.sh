@@ -143,6 +143,24 @@ if grep -q '"mounts"' portal.config.json 2>/dev/null; then
   fi
 fi
 
+# Step 2d: shot-scraper and a browser it can actually drive.
+#
+# Agent CLAUDE.md files point at scripts/memory-venv/bin/shot-scraper to verify
+# UI work, but nothing here ever installed it — it survived only as long as the
+# one container it was hand-installed into.
+#
+# Best-effort, and bounded. A container without a browser is still a working
+# agent, so a failure is a warning rather than a dead setup. The inner timeout
+# matters because docker-compose-create.sh runs this whole script under a single
+# 600s SETUP_TIMEOUT: this step downloads ~900MB, so on a slow link it could eat
+# the budget the node and claude installs need and kill container creation
+# outright. Bounding it here means a slow CDN costs the screenshot capability
+# and nothing else. Re-run browser-setup.sh by hand to get it back.
+echo "--- Setting up shot-scraper and Chromium ---"
+timeout 480 bash "$FRAMEWORK_DIR/scripts/browser-setup.sh" || \
+  echo "WARNING: browser setup failed or timed out — visual verification unavailable." >&2
+echo ""
+
 # Step 3: GitHub CLI
 if ! command -v gh &>/dev/null; then
   echo "--- Installing GitHub CLI ---"
