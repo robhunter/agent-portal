@@ -113,3 +113,161 @@ describe('GET /api/capabilities', () => {
     fs.rmSync(emptyDir, { recursive: true, force: true });
   });
 });
+
+describe('GET /api/capabilities — instructions', () => {
+  let tmpDir, frameworkDir, server, port;
+
+  const WAKE = 'You are waking up for a scheduled work cycle.\nFollow CLAUDE.md.\n\nSecond paragraph with: a colon and a #hash.\n';
+  const RESPOND = 'RESPOND cycle only.\n- Read journals\n- Answer Rob\n';
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'instr-agent-'));
+    frameworkDir = fs.mkdtempSync(path.join(os.tmpdir(), 'instr-fw-'));
+
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Agent Identity\n\n## On Wake\nDo the thing.\n');
+    fs.mkdirSync(path.join(tmpDir, 'memory'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'memory', 'persona.yaml'), 'tone: direct\n');
+    fs.writeFileSync(path.join(tmpDir, 'memory', 'values.yaml'), 'honesty: high\n');
+    fs.writeFileSync(path.join(tmpDir, 'memory', 'operational.yaml'), 'learnings: many\n');
+
+    const yaml = require('js-yaml');
+    fs.writeFileSync(path.join(tmpDir, 'agent.yaml'), yaml.dump({
+      name: 'test-agent',
+      port: 9999,
+      'wake-prompt': WAKE,
+      'respond-prompt': RESPOND,
+    }));
+
+    fs.mkdirSync(path.join(tmpDir, 'skills'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'skills', 'a-skill.md'), '# Skill: A Skill\n\nbody text\n');
+
+    fs.mkdirSync(path.join(frameworkDir, 'instructions'), { recursive: true });
+    fs.writeFileSync(path.join(frameworkDir, 'instructions', 'data-layout.md'), '# Data layout\nshared rules\n');
+    fs.writeFileSync(path.join(frameworkDir, 'instructions', 'journaling.md'), '# Journaling\nshared rules\n');
+
+    const routes = {};
+    const config = { name: 'T', port: 0, agentDir: tmpDir, frameworkDir, _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] } };
+    require('../lib/routes/capabilities').register(routes, config);
+    server = createServer(config, { routes, getHTML: () => '<html>t</html>' });
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(frameworkDir, { recursive: true, force: true });
+  });
+
+  it('returns all five per-agent instruction sources in order', async () => {
+    const data = await fetchJSON(port, '/api/capabilities');
+    const agentIds = data.instructions.filter(i => i.scope === 'agent').map(i => i.id);
+    assert.deepEqual(agentIds, ['claude-md', 'wake-prompt', 'respond-prompt', 'persona', 'values']);
+  });
+
+  it('extracts multi-line prompts from agent.yaml intact', async () => {
+    const data = await fetchJSON(port, '/api/capabilities');
+    const wake = data.instructions.find(i => i.id === 'wake-prompt');
+    const respond = data.instructions.find(i => i.id === 'respond-prompt');
+    assert.equal(wake.content, WAKE);
+    assert.equal(respond.content, RESPOND);
+    assert.ok(wake.source.includes('agent.yaml'));
+  });
+
+  it('marks framework instructions as shared and orders them last', async () => {
+    const data = await fetchJSON(port, '/api/capabilities');
+    const shared = data.instructions.filter(i => i.scope === 'shared');
+    assert.equal(shared.length, 2);
+    assert.deepEqual(shared.map(i => i.id), ['shared-data-layout', 'shared-journaling']);
+    const firstShared = data.instructions.findIndex(i => i.scope === 'shared');
+    const lastAgent = data.instructions.map(i => i.scope).lastIndexOf('agent');
+    assert.ok(lastAgent < firstShared);
+  });
+
+  it('never exposes large agent-authored memory files', async () => {
+    const data = await fetchJSON(port, '/api/capabilities');
+    const sources = data.instructions.map(i => i.source);
+    assert.ok(!sources.some(s => s.includes('operational.yaml')));
+    assert.ok(!sources.some(s => s.includes('decisions.yaml')));
+  });
+
+  it('reports bytes and modified for every entry', async () => {
+    const data = await fetchJSON(port, '/api/capabilities');
+    for (const i of data.instructions) {
+      assert.equal(typeof i.bytes, 'number');
+      assert.ok(i.bytes > 0);
+      assert.ok(!isNaN(new Date(i.modified).getTime()));
+      assert.equal(typeof i.content, 'string');
+    }
+  });
+
+  it('includes content on skills', async () => {
+    const data = await fetchJSON(port, '/api/capabilities');
+    assert.ok(data.skills.length > 0);
+    assert.ok(data.skills.every(s => typeof s.content === 'string' && s.content.length > 0));
+  });
+
+  it('omits missing sources without erroring (dev-agent shape)', async () => {
+    const sparse = fs.mkdtempSync(path.join(os.tmpdir(), 'instr-sparse-'));
+    fs.writeFileSync(path.join(sparse, 'CLAUDE.md'), '# Agent Identity\n');
+    fs.writeFileSync(path.join(sparse, 'agent.yaml'), 'name: sparse\nwake-prompt: |\n  only a wake prompt\n');
+
+    const routes = {};
+    const config = { name: 'S', port: 0, agentDir: sparse, frameworkDir, _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] } };
+    require('../lib/routes/capabilities').register(routes, config);
+    const s2 = createServer(config, { routes, getHTML: () => '<html>t</html>' });
+    await new Promise(resolve => s2.listen(0, resolve));
+
+    const data = await fetchJSON(s2.address().port, '/api/capabilities');
+    const ids = data.instructions.filter(i => i.scope === 'agent').map(i => i.id);
+    assert.deepEqual(ids, ['claude-md', 'wake-prompt']);
+
+    s2.close();
+    fs.rmSync(sparse, { recursive: true, force: true });
+  });
+
+  it('returns empty instructions for an agent dir with none', async () => {
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'instr-empty-'));
+    const noFw = fs.mkdtempSync(path.join(os.tmpdir(), 'instr-nofw-'));
+    const routes = {};
+    const config = { name: 'E', port: 0, agentDir: empty, frameworkDir: noFw, _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] } };
+    require('../lib/routes/capabilities').register(routes, config);
+    const s2 = createServer(config, { routes, getHTML: () => '<html>t</html>' });
+    await new Promise(resolve => s2.listen(0, resolve));
+
+    const data = await fetchJSON(s2.address().port, '/api/capabilities');
+    assert.deepEqual(data.instructions, []);
+
+    s2.close();
+    fs.rmSync(empty, { recursive: true, force: true });
+    fs.rmSync(noFw, { recursive: true, force: true });
+  });
+});
+
+describe('Capabilities tab rendering', () => {
+  const js = require('../lib/ui/tabs/capabilities').getCapabilitiesTabJS();
+
+  it('emits parseable client JS', () => {
+    assert.doesNotThrow(() => new Function(js));
+  });
+
+  it('places Instructions above Skills', () => {
+    const i = js.indexOf('<h2>Instructions</h2>');
+    const s = js.indexOf('<h2>Skills</h2>');
+    assert.ok(i > -1 && s > -1 && i < s);
+  });
+
+  it('escapes expanded content and never routes it through marked', () => {
+    assert.ok(js.includes('escapeHtml(opts.content'));
+    assert.ok(!js.includes('marked.parse'));
+  });
+
+  it('renders instruction and skill cards as expandable details', () => {
+    assert.ok(js.includes('<details class="status-card"'));
+    assert.ok(js.includes('capExpandableCard'));
+  });
+
+  it('labels the shared group as applying to every agent', () => {
+    assert.ok(/Shared .* applies to every agent/.test(js));
+  });
+});
