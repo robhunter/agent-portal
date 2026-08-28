@@ -68,6 +68,7 @@ require('./lib/routes/rated-items').register(routes, config);
 require('./lib/routes/media-files').register(routes, config);
 require('./lib/routes/badges').register(routes, config);
 require('./lib/routes/capabilities').register(routes, config);
+require('./lib/routes/instructions').register(routes, config);
 require('./lib/routes/tts').register(routes, config);
 
 // Build HTML page (cached — config doesn't change at runtime)
