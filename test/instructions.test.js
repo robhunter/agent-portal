@@ -300,3 +300,64 @@ describe('global ~/.claude/CLAUDE.md as Shared Core', () => {
     assert.equal(core.label, 'Core');
   });
 });
+
+describe('AGENTS.md is optional and surfaced when present', () => {
+  let dir, frameworkDir, server, port;
+
+  before(async () => {
+    dir = makeAgentDir();
+    frameworkDir = makeFrameworkDir();
+    fs.writeFileSync(path.join(dir, 'AGENTS.md'), '# FleetHD Reviewer\n\n## HARD CONSTRAINTS\nnever violate\n');
+    fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '# See AGENTS.md\n\nInstructions live in AGENTS.md.\n');
+    ({ server, port } = await startServer(dir, frameworkDir, null));
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(frameworkDir, { recursive: true, force: true });
+  });
+
+  it('lists AGENTS.md immediately after Core', async () => {
+    const data = await (await api(port, '/api/instructions')).json();
+    const ids = data.instructions.filter(i => i.scope === 'agent').map(i => i.id);
+    assert.equal(ids[0], 'claude-md');
+    assert.equal(ids[1], 'agents-md');
+  });
+
+  it('returns its full content and marks it editable', async () => {
+    const data = await (await api(port, '/api/instructions')).json();
+    const a = data.instructions.find(i => i.id === 'agents-md');
+    assert.ok(a);
+    assert.equal(a.label, 'Agents');
+    assert.equal(a.source, 'AGENTS.md');
+    assert.equal(a.scope, 'agent');
+    assert.equal(a.editable, true);
+    assert.match(a.content, /HARD CONSTRAINTS/);
+  });
+
+  it('round-trips an edit', async () => {
+    const next = '# FleetHD Reviewer\n\n## HARD CONSTRAINTS\nedited via portal\n';
+    const res = await api(port, '/api/instructions/agents-md', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: next }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf-8'), next);
+  });
+
+  it('is omitted entirely for agents without one', async () => {
+    const plain = makeAgentDir();
+    const fw2 = makeFrameworkDir();
+    const s2 = await startServer(plain, fw2, null);
+    try {
+      const data = await (await api(s2.port, '/api/instructions')).json();
+      assert.ok(!data.instructions.some(i => i.id === 'agents-md'),
+        'agents without AGENTS.md should not get an empty card');
+    } finally {
+      s2.server.close();
+      fs.rmSync(plain, { recursive: true, force: true });
+      fs.rmSync(fw2, { recursive: true, force: true });
+    }
+  });
+});
