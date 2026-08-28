@@ -10,6 +10,7 @@ function createCapabilitiesServer(tmpDir) {
     name: 'Test',
     port: 0,
     agentDir: tmpDir,
+    globalInstructionsFile: null,
     _serverStartTime: Date.now(),
     authors: {},
     features: {
@@ -146,7 +147,7 @@ describe('GET /api/capabilities — instructions', () => {
     fs.writeFileSync(path.join(frameworkDir, 'instructions', 'journaling.md'), '# Journaling\nshared rules\n');
 
     const routes = {};
-    const config = { name: 'T', port: 0, agentDir: tmpDir, frameworkDir, _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] } };
+    const config = { name: 'T', port: 0, agentDir: tmpDir, frameworkDir, globalInstructionsFile: null, _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] } };
     require('../lib/routes/capabilities').register(routes, config);
     server = createServer(config, { routes, getHTML: () => '<html>t</html>' });
     await new Promise(resolve => server.listen(0, resolve));
@@ -213,7 +214,7 @@ describe('GET /api/capabilities — instructions', () => {
     fs.writeFileSync(path.join(sparse, 'agent.yaml'), 'name: sparse\nwake-prompt: |\n  only a wake prompt\n');
 
     const routes = {};
-    const config = { name: 'S', port: 0, agentDir: sparse, frameworkDir, _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] } };
+    const config = { name: 'S', port: 0, agentDir: sparse, frameworkDir, globalInstructionsFile: null, _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] } };
     require('../lib/routes/capabilities').register(routes, config);
     const s2 = createServer(config, { routes, getHTML: () => '<html>t</html>' });
     await new Promise(resolve => s2.listen(0, resolve));
@@ -230,7 +231,7 @@ describe('GET /api/capabilities — instructions', () => {
     const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'instr-empty-'));
     const noFw = fs.mkdtempSync(path.join(os.tmpdir(), 'instr-nofw-'));
     const routes = {};
-    const config = { name: 'E', port: 0, agentDir: empty, frameworkDir: noFw, _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] } };
+    const config = { name: 'E', port: 0, agentDir: empty, frameworkDir: noFw, globalInstructionsFile: null, _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] } };
     require('../lib/routes/capabilities').register(routes, config);
     const s2 = createServer(config, { routes, getHTML: () => '<html>t</html>' });
     await new Promise(resolve => s2.listen(0, resolve));
@@ -251,10 +252,13 @@ describe('Capabilities tab rendering', () => {
     assert.doesNotThrow(() => new Function(js));
   });
 
-  it('places Instructions above Skills', () => {
-    const i = js.indexOf('<h2>Instructions</h2>');
-    const s = js.indexOf('<h2>Skills</h2>');
-    assert.ok(i > -1 && s > -1 && i < s);
+  it('places Instructions above Shared Core, and both above Skills', () => {
+    const i = js.indexOf("<h2>Instructions</h2>");
+    const sc = js.indexOf("capSection('Shared Core'");
+    const sk = js.indexOf("capSection('Skills'");
+    assert.ok(i > -1 && sc > -1 && sk > -1);
+    assert.ok(i < sc, 'Instructions before Shared Core');
+    assert.ok(sc < sk, 'Shared Core before Skills');
   });
 
   it('escapes expanded content and never routes it through marked', () => {
@@ -267,7 +271,76 @@ describe('Capabilities tab rendering', () => {
     assert.ok(js.includes('capExpandableCard'));
   });
 
-  it('labels the shared group as applying to every agent', () => {
-    assert.ok(/Shared .* applies to every agent/.test(js));
+  it('never emits a section header with no cards', () => {
+    assert.ok(js.includes('if (!cards || cards.length === 0) return'));
+    assert.ok(!/No (MCP servers|skills|scripts|instruction|workspaces)/.test(js),
+      'empty-state placeholder text should be gone');
+  });
+});
+
+describe('Capabilities tab renders no empty section headers', () => {
+  function renderAgainst(port) {
+    const core = require('../lib/ui/client-core');
+    const coreJS = Object.values(core).map(f => (typeof f === 'function' ? f() : '')).join('\n');
+    const tabJS = require('../lib/ui/tabs/capabilities').getCapabilitiesTabJS();
+    const el = { innerHTML: '' };
+    global.document = { getElementById: () => el };
+    global.fetch = (u) => new Promise((res, rej) => {
+      require('http').get(`http://localhost:${port}${u}`, r => {
+        let b = ''; r.on('data', c => b += c); r.on('end', () => res({ json: () => JSON.parse(b) }));
+      }).on('error', rej);
+    });
+    // eslint-disable-next-line no-eval
+    eval(coreJS.match(/function escapeHtml[\s\S]*?\n}/)[0]);
+    global.escapeHtml = escapeHtml;
+    // eslint-disable-next-line no-eval
+    eval(tabJS);
+    return loadCapabilities().then(() => el.innerHTML);
+  }
+
+  async function serveDir(agentDir, frameworkDir) {
+    const routes = {};
+    const config = {
+      name: 'X', port: 0, agentDir, frameworkDir, globalInstructionsFile: null,
+      _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] },
+    };
+    require('../lib/routes/capabilities').register(routes, config);
+    require('../lib/routes/instructions').register(routes, config);
+    const server = createServer(config, { routes, getHTML: () => '<html></html>' });
+    await new Promise(r => server.listen(0, r));
+    return server;
+  }
+
+  it('renders zero headers and a single message for a bare agent', async () => {
+    const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-bare-'));
+    const nofw = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-nofw-'));
+    const server = await serveDir(bare, nofw);
+    try {
+      const html = await renderAgainst(server.address().port);
+      const headers = [...html.matchAll(/<h2>([^<]+)<\/h2>/g)].map(m => m[1]);
+      assert.deepEqual(headers, [], 'a bare agent should render no section headers');
+      assert.match(html, /Nothing discovered for this agent/);
+    } finally {
+      server.close();
+      fs.rmSync(bare, { recursive: true, force: true });
+      fs.rmSync(nofw, { recursive: true, force: true });
+    }
+  });
+
+  it('renders only the sections that have content', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-partial-'));
+    const nofw = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-nofw2-'));
+    fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '# Identity\n');
+    const server = await serveDir(dir, nofw);
+    try {
+      const html = await renderAgainst(server.address().port);
+      const headers = [...html.matchAll(/<h2>([^<]+)<\/h2>/g)].map(m => m[1]);
+      assert.deepEqual(headers, ['Instructions'], 'only Instructions has content');
+      assert.ok(!html.includes('Shared Core'));
+    } finally {
+      server.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(nofw, { recursive: true, force: true });
+    }
   });
 });

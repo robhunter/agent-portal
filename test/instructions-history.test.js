@@ -166,7 +166,7 @@ describe('instruction history — restore respects the cycle guard', () => {
 
     const routes = {};
     const config = {
-      name: 'T', port: 0, agentDir: dir, frameworkDir: dir, lockFile,
+      name: 'T', port: 0, agentDir: dir, frameworkDir: dir, lockFile, globalInstructionsFile: null,
       _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] },
     };
     require('../lib/routes/instructions').register(routes, config);

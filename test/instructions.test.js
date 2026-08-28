@@ -39,7 +39,7 @@ function makeFrameworkDir() {
 async function startServer(agentDir, frameworkDir, lockFile) {
   const routes = {};
   const config = {
-    name: 'T', port: 0, agentDir, frameworkDir, lockFile,
+    name: 'T', port: 0, agentDir, frameworkDir, lockFile, globalInstructionsFile: null,
     _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] },
   };
   require('../lib/routes/instructions').register(routes, config);
@@ -215,5 +215,88 @@ describe('agent.yaml validation', () => {
     const reloaded = yaml.load(out);
     assert.equal(reloaded.name, 'a');
     assert.equal(reloaded['wake-prompt'], nasty);
+  });
+});
+
+describe('global ~/.claude/CLAUDE.md as Shared Core', () => {
+  let agentDir, frameworkDir, globalFile, server, port;
+
+  before(async () => {
+    agentDir = makeAgentDir();
+    frameworkDir = makeFrameworkDir();
+    globalFile = path.join(frameworkDir, 'GLOBAL_CLAUDE.md');
+    fs.writeFileSync(globalFile, '## Pace\n\nEach scheduled cycle is a real work block.\n');
+
+    const routes = {};
+    const config = {
+      name: 'T', port: 0, agentDir, frameworkDir, lockFile: null,
+      globalInstructionsFile: globalFile,
+      _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] },
+    };
+    require('../lib/routes/instructions').register(routes, config);
+    server = createServer(config, { routes, getHTML: () => '<html>t</html>' });
+    await new Promise(r => server.listen(0, r));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(agentDir, { recursive: true, force: true });
+    fs.rmSync(frameworkDir, { recursive: true, force: true });
+  });
+
+  it('exposes the global file as shared and read-only', async () => {
+    const data = await (await api(port, '/api/instructions')).json();
+    const g = data.instructions.find(i => i.id === 'shared-global-claude-md');
+    assert.ok(g, 'global CLAUDE.md should be listed');
+    assert.equal(g.scope, 'shared');
+    assert.equal(g.editable, false);
+    assert.equal(g.label, 'Global');
+    assert.match(g.content, /Each scheduled cycle is a real work block/);
+  });
+
+  it('orders the global file first within the shared group', async () => {
+    const data = await (await api(port, '/api/instructions')).json();
+    const shared = data.instructions.filter(i => i.scope === 'shared');
+    assert.equal(shared[0].id, 'shared-global-claude-md');
+  });
+
+  it('refuses to write the global file', async () => {
+    const before = fs.readFileSync(globalFile, 'utf-8');
+    const res = await api(port, '/api/instructions/shared-global-claude-md', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'hijacked' }),
+    });
+    assert.equal(res.status, 403);
+    assert.equal(fs.readFileSync(globalFile, 'utf-8'), before);
+  });
+
+  it('refuses history for the global file', async () => {
+    const res = await api(port, '/api/instructions/shared-global-claude-md/history');
+    assert.equal(res.status, 403);
+  });
+
+  it('omits it cleanly when the file does not exist', async () => {
+    const routes = {};
+    const config = {
+      name: 'N', port: 0, agentDir, frameworkDir, lockFile: null,
+      globalInstructionsFile: path.join(frameworkDir, 'does-not-exist.md'),
+      _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] },
+    };
+    require('../lib/routes/instructions').register(routes, config);
+    const s2 = createServer(config, { routes, getHTML: () => '<html>t</html>' });
+    await new Promise(r => s2.listen(0, r));
+    try {
+      const data = await (await api(s2.address().port, '/api/instructions')).json();
+      assert.ok(!data.instructions.some(i => i.id === 'shared-global-claude-md'));
+    } finally {
+      s2.close();
+    }
+  });
+
+  it('labels the agent CLAUDE.md "Core", not "Identity"', async () => {
+    const data = await (await api(port, '/api/instructions')).json();
+    const core = data.instructions.find(i => i.id === 'claude-md');
+    assert.equal(core.label, 'Core');
   });
 });
