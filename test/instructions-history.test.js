@@ -193,3 +193,42 @@ describe('instruction history — restore respects the cycle guard', () => {
     assert.equal(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf-8'), before);
   });
 });
+
+describe('commit-on-save without an ambient git identity', () => {
+  const { writeInstruction } = require('../lib/instructions');
+  const IDENTITY_VARS = ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL'];
+
+  it('still commits when git has no configured user anywhere', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'instr-noident-'));
+    const saved = {};
+    for (const k of IDENTITY_VARS.concat(['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM'])) saved[k] = process.env[k];
+    for (const k of IDENTITY_VARS) delete process.env[k];
+    process.env.GIT_CONFIG_GLOBAL = '/dev/null';
+    process.env.GIT_CONFIG_SYSTEM = '/dev/null';
+
+    try {
+      execFileSync('git', ['-C', dir, 'init', '-q'], { stdio: 'ignore' });
+      fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '# one\n');
+      execFileSync('git', ['-C', dir, 'add', '-A'], { stdio: 'ignore' });
+      execFileSync('git', ['-C', dir, '-c', 'user.name=seed', '-c', 'user.email=s@s', 'commit', '-q', '-m', 'seed'], { stdio: 'ignore' });
+
+      assert.throws(
+        () => execFileSync('git', ['-C', dir, 'commit', '--allow-empty', '-m', 'probe'], { stdio: 'ignore' }),
+        'fixture should have no usable git identity',
+      );
+
+      const before = Number(execFileSync('git', ['-C', dir, 'rev-list', '--count', 'HEAD'], { encoding: 'utf-8' }).trim());
+      const result = writeInstruction(dir, 'claude-md', '# two\n');
+      assert.equal(result.committed, true, 'expected a commit even with no ambient identity');
+      const after = Number(execFileSync('git', ['-C', dir, 'rev-list', '--count', 'HEAD'], { encoding: 'utf-8' }).trim());
+      assert.equal(after, before + 1);
+      const author = execFileSync('git', ['-C', dir, 'log', '-1', '--format=%an'], { encoding: 'utf-8' }).trim();
+      assert.equal(author, 'agent-portal', 'expected the fallback identity to be used');
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
