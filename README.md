@@ -257,6 +257,32 @@ npm run test:node     # node tests only (test/*.test.js)
 npm run test:shell    # shell tests only (test/*.test.sh)
 ```
 
+### Visual verification (shot-scraper)
+
+Agents verify UI work by screenshotting it:
+
+```bash
+scripts/memory-venv/bin/shot-scraper <url> -o /tmp/shot.png
+```
+
+`scripts/vm-setup.sh` provisions this, but a container can lose it — and the
+interesting failure is that it half-works. The CLI and a 600MB Chromium can both
+be present while every screenshot fails, because the system libraries Chromium
+links against were never installed. Nothing about the installed files
+distinguishes that container from a healthy one.
+
+So the setup script checks by taking a screenshot rather than by looking for
+files:
+
+```bash
+bash scripts/browser-setup.sh --check   # verify only, exit 1 if broken (~1s, offline)
+bash scripts/browser-setup.sh           # verify, and install whatever is missing
+```
+
+Run the second form if `--check` fails or if shot-scraper starts erroring
+mid-cycle; it is idempotent and returns in about a second when nothing is
+missing.
+
 ### Start the agent-controller
 
 The agent-controller is an HTTP supervisor service that manages agent Docker containers (exec commands, restart, stream logs, trigger cycles). It listens on port 9090 by default.

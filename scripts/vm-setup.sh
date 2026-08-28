@@ -143,6 +143,18 @@ if grep -q '"mounts"' portal.config.json 2>/dev/null; then
   fi
 fi
 
+# Step 2d: shot-scraper and a browser it can actually drive.
+#
+# Agent CLAUDE.md files point at scripts/memory-venv/bin/shot-scraper to verify
+# UI work, but nothing here ever installed it — it survived only as long as the
+# one container it was hand-installed into. Best-effort: a container without a
+# browser is still a working agent, it just cannot screenshot, so a failure here
+# is a warning rather than a dead setup.
+echo "--- Setting up shot-scraper and Chromium ---"
+bash "$FRAMEWORK_DIR/scripts/browser-setup.sh" || \
+  echo "WARNING: browser setup failed — visual verification will be unavailable" >&2
+echo ""
+
 # Step 3: GitHub CLI
 if ! command -v gh &>/dev/null; then
   echo "--- Installing GitHub CLI ---"
