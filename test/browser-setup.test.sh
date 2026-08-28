@@ -147,6 +147,35 @@ else
   echo "  skip - no shot-scraper installed in this checkout"
 fi
 
+# --- Test 9: how vm-setup.sh invokes it ---
+# Two properties, both about not taking the container down with us. vm-setup.sh
+# runs under `set -e` and, from docker-compose-create.sh, under a single 600s
+# SETUP_TIMEOUT covering the node and claude installs too. An unbounded ~900MB
+# download in the middle of that can kill container creation outright.
+echo "## Test 9: vm-setup.sh wiring"
+# Strip comments before matching. The comment block above the call names
+# browser-setup.sh too, and a context window anchored on that instead of on the
+# invocation would keep passing after the real line changed.
+VM_LINE=$(grep -v '^[[:space:]]*#' "$REPO_DIR/scripts/vm-setup.sh" | grep -A1 'browser-setup\.sh')
+
+TESTS=$((TESTS + 1))
+if echo "$VM_LINE" | grep -qE 'timeout [0-9]+ bash .*browser-setup\.sh'; then
+  PASS=$((PASS + 1))
+  echo "  ok - the browser step is bounded by a timeout"
+else
+  FAIL=$((FAIL + 1))
+  echo "  FAIL - the browser step is not bounded: $VM_LINE"
+fi
+
+TESTS=$((TESTS + 1))
+if echo "$VM_LINE" | grep -q '||'; then
+  PASS=$((PASS + 1))
+  echo "  ok - a browser failure does not abort vm-setup"
+else
+  FAIL=$((FAIL + 1))
+  echo "  FAIL - a browser failure would abort vm-setup under set -e: $VM_LINE"
+fi
+
 echo ""
 echo "# Results: $PASS/$TESTS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
