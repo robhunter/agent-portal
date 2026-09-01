@@ -106,4 +106,5 @@ extraCron.forEach((entry, i) => {
   console.log(`EXTRA_CRON_${i}_SCHEDULE=${shellEscape(entry.schedule)}`);
   console.log(`EXTRA_CRON_${i}_COMMAND=${shellEscape(entry.command)}`);
   console.log(`EXTRA_CRON_${i}_LOG=${shellEscape(entry.log)}`);
+  console.log(`EXTRA_CRON_${i}_DISABLE_WITH_WAKE=${entry['disable-with-wake'] === false ? '0' : '1'}`);
 });
