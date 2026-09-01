@@ -45,7 +45,11 @@ if [ "$EXTRA_CRON_COUNT" -gt 0 ] 2>/dev/null; then
     log_var="EXTRA_CRON_${i}_LOG"
     schedule="${!sched_var}"; command="${!cmd_var}"; logfile="${!log_var}"
 
+    dis_var="EXTRA_CRON_${i}_DISABLE_WITH_WAKE"
     EXTRA_LINE="${schedule} root ${CRON_ENV} cd ${AGENT_DIR} && ${command} >> ${logfile} 2>&1"
+    if [ -f "$CRON_DISABLED_FILE" ] && [ "${!dis_var:-1}" != "0" ]; then
+      EXTRA_LINE="# $EXTRA_LINE"
+    fi
     CRON_LINES="$CRON_LINES
 $EXTRA_LINE"
   done

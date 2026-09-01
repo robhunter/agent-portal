@@ -1,14 +1,4 @@
 #!/bin/bash
-# test/cron-disabled-sentinel.test.sh — cron-setup.sh must honour a
-# .cron-disabled sentinel in the agent directory.
-#
-# The case that motivated it: /etc/cron.d/<agent> lives in the container's
-# writable layer, so toggling cron off there is erased whenever the container
-# restarts and start.sh reinstalls the schedule. An agent switched off came
-# back on by itself — including when something restarted it automatically.
-# The sentinel lives in the agent directory, which is bind-mounted, so the
-# off state survives.
-
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRAMEWORK_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -31,35 +21,36 @@ cron-schedule: 0 */4 * * *
 timezone: UTC
 extra-cron:
   - schedule: "30 5 * * *"
-    command: "bash scripts/extra.sh"
-    log: "logs/extra.log"
+    command: "bash scripts/digest.sh"
+    log: "logs/digest.log"
+  - schedule: "0 * * * *"
+    command: "bash scripts/heartbeat.sh"
+    log: "logs/heartbeat.log"
+    disable-with-wake: false
 EOF
 
 install_cron() {
   bash "$FRAMEWORK_DIR/scripts/cron-setup.sh" "$AGENT_DIR" install >/dev/null 2>&1
 }
 
-wake_commented() {
-  grep 'wake.sh' "$AGENT_DIR/cronfile" | head -1 | grep -q '^[[:space:]]*#' && echo yes || echo no
-}
-
-extra_commented() {
-  grep 'extra.sh' "$AGENT_DIR/cronfile" | head -1 | grep -q '^[[:space:]]*#' && echo yes || echo no
+commented() {
+  grep "$1" "$AGENT_DIR/cronfile" | head -1 | grep -q '^[[:space:]]*#' && echo yes || echo no
 }
 
 echo "# cron-setup.sh .cron-disabled sentinel"
 
 install_cron
-check "no sentinel installs an active wake entry" "$(wake_commented)" "no"
+check "no sentinel leaves the wake entry active" "$(commented wake.sh)" "no"
+check "no sentinel leaves extra entries active" "$(commented digest.sh)" "no"
 
 touch "$AGENT_DIR/.cron-disabled"
 install_cron
-check "sentinel installs the wake entry commented out" "$(wake_commented)" "yes"
-
-check "extra cron entries are left active" "$(extra_commented)" "no"
+check "sentinel comments out the wake entry" "$(commented wake.sh)" "yes"
+check "sentinel comments out extra entries by default" "$(commented digest.sh)" "yes"
+check "disable-with-wake false keeps an entry active" "$(commented heartbeat.sh)" "no"
 
 install_cron
-check "reinstalling with the sentinel stays disabled" "$(wake_commented)" "yes"
+check "reinstalling with the sentinel stays disabled" "$(commented wake.sh)" "yes"
 
 occurrences=$(grep -c 'wake.sh' "$AGENT_DIR/cronfile")
 check "the wake entry is not duplicated on reinstall" "$occurrences" "1"
@@ -69,7 +60,8 @@ check "repeated installs do not stack comment markers" "$double_hash" "no"
 
 rm "$AGENT_DIR/.cron-disabled"
 install_cron
-check "removing the sentinel re-enables the wake entry" "$(wake_commented)" "no"
+check "removing the sentinel re-enables the wake entry" "$(commented wake.sh)" "no"
+check "removing the sentinel re-enables extra entries" "$(commented digest.sh)" "no"
 
 echo ""
 echo "# Results: $((pass+fail)) tests, $pass passed, $fail failed"
