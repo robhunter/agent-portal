@@ -25,8 +25,14 @@ DATA_DIR="${DATA_DIR:-.}"
 # - nvm so claude/node are on PATH
 CRON_ENV='for f in /etc/profile.d/sandcat-*.sh; do [ -r "$f" ] && . "$f"; done; export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" &&'
 
+CRON_DISABLED_FILE="$AGENT_DIR/.cron-disabled"
+
 # Main wake entry from agent.yaml — cron-wake.log lives under <DATA_DIR>/logs/cycles
 WAKE_LINE="${AGENT_CRON_SCHEDULE} root ${CRON_ENV} cd ${AGENT_DIR} && bash ${FRAMEWORK_DIR}/scripts/wake.sh ${AGENT_DIR} >> ${DATA_DIR}/logs/cycles/cron-wake.log 2>&1"
+
+if [ -f "$CRON_DISABLED_FILE" ]; then
+  WAKE_LINE="# $WAKE_LINE"
+fi
 
 # Build all cron lines
 CRON_LINES="$WAKE_LINE"
