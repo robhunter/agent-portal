@@ -279,6 +279,13 @@ describe('Capabilities tab rendering', () => {
 });
 
 describe('Capabilities tab renders no empty section headers', () => {
+  const realFetch = global.fetch;
+  const realDocument = global.document;
+  after(() => {
+    global.fetch = realFetch;
+    global.document = realDocument;
+  });
+
   function renderAgainst(port) {
     const core = require('../lib/ui/client-core');
     const coreJS = Object.values(core).map(f => (typeof f === 'function' ? f() : '')).join('\n');
@@ -295,7 +302,11 @@ describe('Capabilities tab renders no empty section headers', () => {
     global.escapeHtml = escapeHtml;
     // eslint-disable-next-line no-eval
     eval(tabJS);
-    return loadCapabilities().then(() => el.innerHTML);
+    return loadCapabilities().then(() => {
+      global.fetch = realFetch;
+      global.document = realDocument;
+      return el.innerHTML;
+    });
   }
 
   async function serveDir(agentDir, frameworkDir) {
@@ -342,5 +353,57 @@ describe('Capabilities tab renders no empty section headers', () => {
       fs.rmSync(dir, { recursive: true, force: true });
       fs.rmSync(nofw, { recursive: true, force: true });
     }
+  });
+});
+
+describe('readSkills supports SKILL.md directories and legacy flat files', () => {
+  let dir, server, port;
+
+  before(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-skills-'));
+    fs.mkdirSync(path.join(dir, 'skills', 'writing-outputs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'skills', 'writing-outputs', 'SKILL.md'),
+      '---\nname: writing-outputs\ndescription: Writes a review artifact into output/. Use when producing a research doc.\n---\n# Writing outputs\n\nbody\n');
+    fs.writeFileSync(path.join(dir, 'skills', 'legacy-thing.md'), '# Skill: Legacy Thing\n\n## When to use\n- Old style\n');
+
+    const routes = {};
+    const config = {
+      name: 'S', port: 0, agentDir: dir, frameworkDir: dir, globalInstructionsFile: null,
+      _serverStartTime: Date.now(), authors: {}, features: { tabs: ['capabilities'] },
+    };
+    require('../lib/routes/capabilities').register(routes, config);
+    server = createServer(config, { routes, getHTML: () => '<html></html>' });
+    await new Promise(r => server.listen(0, r));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reads a SKILL.md directory and its frontmatter', async () => {
+    const data = await fetchJSON(port, '/api/capabilities');
+    const s = data.skills.find(x => x.name === 'writing-outputs');
+    assert.ok(s);
+    assert.equal(s.format, 'skill');
+    assert.equal(s.filename, path.join('writing-outputs', 'SKILL.md'));
+    assert.match(s.description, /Use when producing a research doc/);
+    assert.match(s.content, /body/);
+  });
+
+  it('still reads legacy flat files', async () => {
+    const data = await fetchJSON(port, '/api/capabilities');
+    const s = data.skills.find(x => x.filename === 'legacy-thing.md');
+    assert.ok(s);
+    assert.equal(s.format, 'legacy');
+    assert.equal(s.description, 'Legacy Thing');
+  });
+
+  it('ignores a directory without SKILL.md', async () => {
+    fs.mkdirSync(path.join(dir, 'skills', 'conventions'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'skills', 'conventions', 'notes.md'), 'not a skill\n');
+    const data = await fetchJSON(port, '/api/capabilities');
+    assert.ok(!data.skills.some(x => x.name === 'conventions'));
   });
 });
