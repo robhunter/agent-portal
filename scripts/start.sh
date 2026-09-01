@@ -33,6 +33,13 @@ log() {
   echo "$(date -Iseconds) [supervisor] $*"
 }
 
+HARNESS_TYPE=""
+eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR" 2>/dev/null | grep '^export HARNESS_TYPE=')"
+if [ -d "$AGENT_DIR/skills" ] && [ "$HARNESS_TYPE" != "codex" ]; then
+  mkdir -p "$AGENT_DIR/.claude"
+  ln -sfn ../skills "$AGENT_DIR/.claude/skills"
+fi
+
 log "Starting agent '$AGENT_NAME' (framework=$FRAMEWORK_DIR, agent=$AGENT_DIR)"
 
 # Clean up stale PID files on startup
