@@ -3,7 +3,7 @@
 #
 # Usage: eval "$(bash read-harness-config.sh /path/to/agent-dir)"
 #
-# Exports: HARNESS_TYPE, HARNESS_CMD, HARNESS_EXTRA_FLAGS, DATA_DIR
+# Exports: HARNESS_TYPE, HARNESS_TYPES, HARNESS_CMD, HARNESS_EXTRA_FLAGS, DATA_DIR
 # Defaults: claude-code harness, DATA_DIR="." (backwards-compatible with the
 # pre-dataDir layout where all framework state lives at the agent root).
 #
@@ -23,12 +23,14 @@ if [ -f "$PORTAL_CONFIG" ] && command -v node >/dev/null 2>&1; then
     const c = JSON.parse(require('fs').readFileSync('$PORTAL_CONFIG', 'utf-8'));
     const h = c.harness || {};
     console.log('HARNESS_TYPE=' + JSON.stringify(h.type || 'claude-code'));
+    console.log('HARNESS_TYPES=' + JSON.stringify((Array.isArray(h.types) && h.types.length ? h.types : [h.type || 'claude-code']).join(' ')));
     console.log('HARNESS_CMD=' + JSON.stringify(h.command || 'claude --print'));
     console.log('HARNESS_EXTRA_FLAGS=' + JSON.stringify(h.extraFlags || ''));
     console.log('DATA_DIR=' + JSON.stringify(c.dataDir || '.'));
   ")"
 else
   HARNESS_TYPE="claude-code"
+  HARNESS_TYPES="claude-code"
   HARNESS_CMD="claude --print"
   HARNESS_EXTRA_FLAGS=""
   DATA_DIR="."
@@ -40,6 +42,7 @@ if [ "$HARNESS_TYPE" = "claude-code" ] && [ -z "$HARNESS_EXTRA_FLAGS" ]; then
 fi
 
 echo "export HARNESS_TYPE=${HARNESS_TYPE@Q}"
+echo "export HARNESS_TYPES=${HARNESS_TYPES@Q}"
 echo "export HARNESS_CMD=${HARNESS_CMD@Q}"
 echo "export HARNESS_EXTRA_FLAGS=${HARNESS_EXTRA_FLAGS@Q}"
 echo "export DATA_DIR=${DATA_DIR@Q}"

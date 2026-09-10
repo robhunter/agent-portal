@@ -109,7 +109,10 @@ fi
 # Step 2b: Codex CLI — only for agents whose harness is codex. Claude-only
 # agents skip this; there is no reason to carry a second harness they never
 # invoke. Run from the agent directory, so ./portal.config.json is the agent's.
-if grep -q '"type"[[:space:]]*:[[:space:]]*"codex"' portal.config.json 2>/dev/null; then
+if [ -f portal.config.json ] && node -e '
+  const h = JSON.parse(require("fs").readFileSync("portal.config.json", "utf-8")).harness || {};
+  process.exit([].concat(h.types || h.type || []).includes("codex") ? 0 : 1);
+' 2>/dev/null; then
   if ! command -v codex &>/dev/null; then
     echo "--- Installing Codex CLI ---"
     npm install -g @openai/codex

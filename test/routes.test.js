@@ -1382,6 +1382,39 @@ describe('GET /api/harness/status', () => {
 
     server.close();
   });
+
+  async function multiHarnessStatus(codexHome) {
+    const prev = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = codexHome;
+    try {
+      const { server } = createTestServer({ harness: { type: 'codex', types: ['codex', 'script'], command: 'echo' } });
+      await new Promise(resolve => server.listen(0, resolve));
+      const out = await fetchJSON(server.address().port, '/api/harness/status');
+      server.close();
+      return out;
+    } finally {
+      if (prev === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = prev;
+    }
+  }
+
+  it('reports each harness in harness.types', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'));
+    fs.writeFileSync(path.join(home, 'auth.json'), '{"tokens":{}}');
+    const { status, data } = await multiHarnessStatus(home);
+    fs.rmSync(home, { recursive: true, force: true });
+    assert.equal(status, 200);
+    assert.equal(data.loggedIn, true);
+    assert.equal(data.harnessType, 'multi');
+    assert.deepEqual(data.harnesses, [{ type: 'codex', loggedIn: true }, { type: 'script', loggedIn: true }]);
+  });
+
+  it('a missing codex login fails the combined status', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'));
+    const { data } = await multiHarnessStatus(home);
+    fs.rmSync(home, { recursive: true, force: true });
+    assert.equal(data.loggedIn, false);
+    assert.deepEqual(data.harnesses, [{ type: 'codex', loggedIn: false }, { type: 'script', loggedIn: true }]);
+  });
 });
 
 describe('POST /api/upload', () => {
