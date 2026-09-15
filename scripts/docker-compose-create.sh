@@ -110,6 +110,10 @@ mkdir -p "$STACK_DIR"
 # makes Docker invent a root-owned directory, which then fails the login write.
 mkdir -p "$HOME/.claude" "$HOME/.codex"
 
+# Harness-independent instructions and tooling shared by every agent, whatever
+# its harness. Created up front for the same reason as the stores above.
+mkdir -p "$HOME/.agents"
+
 # ── Optional extra bind mounts ────────────────────────────────────────────
 # portal.config.json may declare `mounts: { "<host path>": "<container path>" }`.
 # This is for an agent whose project cannot be built inside the container: the
@@ -207,6 +211,7 @@ services:
       - $FRAMEWORK_DIR:$CONTAINER_FRAMEWORK_DIR
       - ${HOME}/.claude:/root/.claude
       - ${HOME}/.codex:/root/.codex
+      - ${HOME}/.agents:/root/.agents
 $EXTRA_MOUNTS
       - sandcat-certs:/sandcat-certs:ro
     entrypoint: ["bash", "$CONTAINER_FRAMEWORK_DIR/sandcat/scripts/app-init.sh", "$CONTAINER_AGENT_DIR"]
