@@ -110,8 +110,7 @@ mkdir -p "$STACK_DIR"
 # makes Docker invent a root-owned directory, which then fails the login write.
 mkdir -p "$HOME/.claude" "$HOME/.codex"
 
-# Harness-independent instructions and tooling shared by every agent, whatever
-# its harness. Created up front for the same reason as the stores above.
+# Harness-independent instructions and tooling shared by every agent.
 mkdir -p "$HOME/.agents"
 
 # ── Optional extra bind mounts ────────────────────────────────────────────

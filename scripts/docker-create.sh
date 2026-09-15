@@ -74,9 +74,7 @@ if docker ps -a --format '{{.Names}}' | grep -q "^${AGENT_NAME}$"; then
     docker rm -f "$AGENT_NAME"
 fi
 
-# Harness-independent instructions and tooling shared by every agent. Created
-# up front — a bind mount of a missing path makes Docker invent a root-owned
-# directory on the host.
+# Harness-independent instructions and tooling shared by every agent.
 mkdir -p "$HOME/.agents"
 
 # ── Create container ──────────────────────────────────────────────────────
