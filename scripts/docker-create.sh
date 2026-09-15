@@ -74,12 +74,16 @@ if docker ps -a --format '{{.Names}}' | grep -q "^${AGENT_NAME}$"; then
     docker rm -f "$AGENT_NAME"
 fi
 
+# Harness-independent instructions and tooling shared by every agent.
+mkdir -p "$HOME/.agents"
+
 # ── Create container ──────────────────────────────────────────────────────
 echo ""
 echo "Creating $AGENT_NAME container..."
 docker run -d --name "$AGENT_NAME" --restart unless-stopped \
     -v "$AGENT_DIR:$CONTAINER_AGENT_DIR" \
     -v "${HOME}/.claude:/root/.claude" \
+    -v "${HOME}/.agents:/root/.agents" \
     --env-file "$AGENT_DIR/.env" \
     -p "$AGENT_PORT:$AGENT_PORT" \
     ubuntu:24.04 \
