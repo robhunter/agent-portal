@@ -69,61 +69,24 @@ fi
 
 # ── LOCK ACQUISITION ──
 
-# Stale lock timeout in seconds (default: 90 minutes)
-LOCK_STALE_TIMEOUT="${AGENT_LOCK_STALE_TIMEOUT:-5400}"
+# A holder is stale only once it has run longer than any real cycle does. The
+# longest observed here is 8399s (2h20m), so the default leaves room above it.
+LOCK_STALE_TIMEOUT="${AGENT_LOCK_STALE_TIMEOUT:-14400}"
 
-exec 200>"$AGENT_LOCK_FILE"
-if ! flock -n 200; then
-  step "lock held — checking for stale holder"
+. "$FRAMEWORK_DIR/scripts/cycle-lock.sh"
 
-  # Write our PID to help with debugging
-  HOLDER_PID=$(fuser "$AGENT_LOCK_FILE" 2>/dev/null | tr -d ' ')
-  if [ -n "$HOLDER_PID" ]; then
-    HOLDER_AGE=$(ps -o etimes= -p "$HOLDER_PID" 2>/dev/null | tr -d ' ')
-    step "lock holder PID=$HOLDER_PID age=${HOLDER_AGE:-unknown}s (threshold=${LOCK_STALE_TIMEOUT}s)"
+LOCK_STATUS=0
+acquire_cycle_lock "$AGENT_LOCK_FILE" "$LOCK_STALE_TIMEOUT" || LOCK_STATUS=$?
 
-    if [ "${HOLDER_AGE:-0}" -gt "$LOCK_STALE_TIMEOUT" ]; then
-      step "stale lock detected — killing PID $HOLDER_PID (age ${HOLDER_AGE}s > ${LOCK_STALE_TIMEOUT}s)"
-      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" recovery \
-        "Killed stale lock holder PID $HOLDER_PID (age ${HOLDER_AGE}s)"
-      kill "$HOLDER_PID" 2>/dev/null
-      sleep 2
-      # Force kill if still alive
-      kill -0 "$HOLDER_PID" 2>/dev/null && kill -9 "$HOLDER_PID" 2>/dev/null
-      sleep 1
-
-      # Retry lock acquisition
-      if ! flock -n 200; then
-        step "lock still held after killing stale holder — skipping"
-        bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_skipped \
-          "Lock held by another cycle (stale kill failed)"
-        exit 0
-      fi
-      step "lock acquired after stale holder cleanup"
-    else
-      step "lock holder is recent (${HOLDER_AGE}s < ${LOCK_STALE_TIMEOUT}s) — skipping"
-      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_skipped "Lock held by another cycle"
-      exit 0
-    fi
-  else
-    # Can't find holder PID — lock file exists but no process found
-    # This likely means the holder died without releasing the lock
-    step "no holder PID found — lock is orphaned, retrying"
-    bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" recovery \
-      "Orphaned lock detected (no holder PID), forcing cleanup"
-    # Close our fd, delete the file (unlinking the old inode that holds
-    # the orphaned flock), then create a fresh file on a new inode.
-    exec 200>&-
-    rm -f "$AGENT_LOCK_FILE"
-    exec 200>"$AGENT_LOCK_FILE"
-    if ! flock -n 200; then
-      step "lock still held after orphan cleanup — skipping"
-      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_skipped \
-        "Lock held by another cycle (orphan cleanup failed)"
-      exit 0
-    fi
-    step "lock acquired after orphan cleanup"
-  fi
+if [ "$LOCK_STATUS" = "2" ]; then
+  step "killed lock holder PID $LOCK_HOLDER_PID after ${LOCK_HOLDER_AGE}s (threshold=${LOCK_STALE_TIMEOUT}s)"
+  bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" recovery \
+    "Killed stale lock holder PID $LOCK_HOLDER_PID (age ${LOCK_HOLDER_AGE}s)"
+elif [ "$LOCK_STATUS" != "0" ]; then
+  step "lock held by PID ${LOCK_HOLDER_PID:-unknown} age=${LOCK_HOLDER_AGE:-unknown}s (threshold=${LOCK_STALE_TIMEOUT}s) — skipping this wake"
+  bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_skipped \
+    "Lock held by another cycle (PID ${LOCK_HOLDER_PID:-unknown})"
+  exit 0
 fi
 
 # Write our PID to lock file for debugging
