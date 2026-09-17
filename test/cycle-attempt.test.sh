@@ -195,6 +195,20 @@ check "and the cycle is reported as a clean exit" "$HARNESS_EXIT" "0"
 check "with both transcripts kept" \
   "$(cat "$CYCLES/20260916-0600.log" 2>/dev/null)" "transcript of attempt 1"
 
+# wake.sh defines step() and expects every progress line to reach its step log.
+STEP_LOG="$TMP/wake-steps.log"
+: > "$STEP_LOG"
+step() { echo "$(date -Iseconds) $*" >> "$STEP_LOG"; }
+STUB_MODE=silent
+run_loop
+contains "progress goes to wake.sh's step log when there is one" \
+  "$(cat "$STEP_LOG")" "retrying harness (attempt 2)"
+contains "including where the retry's transcript went" \
+  "$(cat "$STEP_LOG")" "attempt 2 transcript at $CYCLES/20260916-0600-attempt2.log"
+contains "and why the attempt was judged a failure" \
+  "$(cat "$STEP_LOG")" "wrote no journal entry"
+unset -f step
+
 echo ""
 echo "  $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
