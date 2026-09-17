@@ -161,9 +161,13 @@ fi
 
 # Track cycle timing
 CYCLE_TS="$(date +%Y%m%d-%H%M)"
-CYCLE_LOG="$DATA_DIR/logs/cycles/${CYCLE_TS}.log"
-mkdir -p "$DATA_DIR/logs/cycles"
+CYCLE_LOG_DIR="$DATA_DIR/logs/cycles"
+mkdir -p "$CYCLE_LOG_DIR"
 CYCLE_START_EPOCH=$(date +%s)
+
+# Owns the harness invocation, its retries, and where each attempt's
+# transcript goes. Sets CYCLE_LOG, HARNESS_EXIT and RETRY.
+. "$FRAMEWORK_DIR/scripts/cycle-attempt.sh"
 
 # Log cycle start
 bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_start "Scheduled wake"
@@ -301,52 +305,38 @@ fi
 # Close lock fd before piping to harness to prevent fd leak into child processes
 step "$HARNESS_CMD starting"
 
-# Zero-work detection: if the harness exits 0 but the agent wrote no
-# events (no cycle_end summary, no journal entry, no anything), we
-# treat that as a soft failure and retry. Catches the failure mode
-# where the harness swallows a mid-cycle error and exits cleanly with
-# no work landed (e.g. goose hitting a stream-decode error from the
-# upstream API, printing "Ran into this error" and exit 0).
+# Zero-work detection: if the harness exits 0 but the agent neither logged
+# an event nor wrote a journal entry, we treat that as a soft failure and
+# retry. Catches the failure mode where the harness swallows a mid-cycle
+# error and exits cleanly with no work landed (e.g. goose hitting a
+# stream-decode error from the upstream API, printing "Ran into this error"
+# and exit 0).
 #
-# Mechanism: snapshot the events.jsonl line count BEFORE the harness
-# invocation. After each attempt, if exit==0 but the line count is
-# unchanged, the agent wrote nothing — set HARNESS_EXIT to a non-zero
-# sentinel so the retry loop fires.
+# Mechanism: snapshot the events.jsonl and journal line counts BEFORE the
+# harness invocation, and compare after (wrap_up_happened). Both are written
+# in the agent's wrap-up, so either one landing means the cycle finished;
+# neither landing means it did not, whatever else it may have left behind.
+#
+# What it cannot tell is whether the dead attempt did work — the events come
+# last, so a 40-minute cycle that died before its wrap-up looks exactly like
+# one that never woke (issue #301). The retry therefore keeps the dead
+# attempt's transcript rather than overwriting it, and carries a note telling
+# the next attempt where to look.
 EVENTS_FILE="$AGENT_DIR/$DATA_DIR/logs/events.jsonl"
+JOURNALS_DIR="$AGENT_DIR/$DATA_DIR/journals"
+
+WORKSPACE_PATHS=()
+if [ "$WORKSPACES_COUNT" -gt 0 ] 2>/dev/null; then
+  for i in $(seq 0 $((WORKSPACES_COUNT - 1))); do
+    path_var="WORKSPACE_${i}_PATH"
+    [ -n "${!path_var}" ] && WORKSPACE_PATHS+=("${!path_var}")
+  done
+fi
 
 MAX_RETRIES=2
-RETRY=0
-HARNESS_EXIT=1
 
 set +e
-while [ "$HARNESS_EXIT" -ne 0 ] && [ "$RETRY" -lt "$MAX_RETRIES" ]; do
-  if [ "$RETRY" -gt 0 ]; then
-    step "retrying harness (attempt $((RETRY+1)))"
-    bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" retry \
-      "Retrying after failure (attempt $((RETRY+1)))"
-    sleep 30
-  fi
-
-  EVENTS_BEFORE=$(wc -l < "$EVENTS_FILE" 2>/dev/null || echo 0)
-
-  cat "$WAKE_PROMPT_FILE" 200>&- | $HARNESS_CMD $HARNESS_EXTRA_FLAGS \
-    200>&- 2>&1 | tee 200>&- "$CYCLE_LOG"
-  HARNESS_EXIT=${PIPESTATUS[1]}
-
-  # Zero-work check: harness exited 0 but agent wrote no events
-  if [ "$HARNESS_EXIT" -eq 0 ]; then
-    EVENTS_AFTER=$(wc -l < "$EVENTS_FILE" 2>/dev/null || echo 0)
-    if [ "$EVENTS_AFTER" -eq "$EVENTS_BEFORE" ]; then
-      step "harness exited 0 but agent wrote no events — treating as failure (zero-work cycle)"
-      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" warning \
-        "Harness exited 0 with no agent events; retrying (attempt $((RETRY+1)))" \
-        2>/dev/null || true
-      HARNESS_EXIT=98   # non-zero sentinel so the while loop retries
-    fi
-  fi
-
-  RETRY=$((RETRY + 1))
-done
+run_cycle_attempts
 set -e
 
 step "harness finished (exit=$HARNESS_EXIT, attempts=$RETRY)"
