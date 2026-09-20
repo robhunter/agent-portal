@@ -4,6 +4,13 @@
 # drives publish-content.sh through pass/fail/quarantine scenarios.
 set -e
 
+# The synthetic agent dir below declares dataDir: "data" in its own
+# portal.config.json, and publish-content.sh reads that file only when DATA_DIR
+# is unset. An agent cycle exports DATA_DIR for its own agent, so inheriting it
+# here points the gate at a registry that does not exist. Test 8 sets it back
+# deliberately to cover the override.
+unset DATA_DIR
+
 FRAMEWORK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT="$FRAMEWORK_DIR/scripts/publish-content.sh"
 
