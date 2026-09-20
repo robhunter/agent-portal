@@ -111,54 +111,16 @@ if [ -n "$SOURCE_REL" ]; then
     echo "Source file not found: $SOURCE_FILE" >&2
     exit 2
   fi
-  PARSED=$(SOURCE_FILE="$SOURCE_FILE" python3 -c "
-import os, sys, yaml, json
-try:
-    with open(os.environ['SOURCE_FILE']) as f:
-        doc = yaml.safe_load(f) or {}
-    if not isinstance(doc, dict):
-        raise ValueError('top-level must be a mapping')
-    projects = doc.get('projects') or []
-    if not isinstance(projects, list):
-        raise ValueError('projects must be a list')
-    out = []
-    for p in projects:
-        if not isinstance(p, dict):
-            raise ValueError('each project must be a mapping')
-        name = p.get('name', '') or ''
-        eps = p.get('endpoints') or []
-        if not eps:
-            continue
-        if not isinstance(eps, list):
-            raise ValueError('endpoints must be a list under project ' + str(name))
-        for ep in eps:
-            if not isinstance(ep, dict):
-                raise ValueError('each endpoint must be a mapping under project ' + str(name))
-            out.append({'project': name, 'url': ep.get('url', '') or '', 'type': ep.get('type', '') or ''})
-    print(json.dumps({'pairs': out}))
-except Exception as e:
-    print('PARSE_ERROR:' + str(e), file=sys.stderr)
-    sys.exit(1)
-") || { echo "Failed to parse $SOURCE_FILE" >&2; exit 1; }
+  PARSED=$(node "$FRAMEWORK_DIR/scripts/read-health-endpoints.js" --projects "$SOURCE_FILE") \
+    || { echo "Failed to parse $SOURCE_FILE" >&2; exit 1; }
 else
   YAML="$AGENT_DIR/agent.yaml"
   if [ ! -f "$YAML" ]; then
     echo "agent.yaml not found at $YAML" >&2
     exit 1
   fi
-  PARSED=$(YAML_FILE="$YAML" python3 -c "
-import os, sys, yaml, json
-try:
-    with open(os.environ['YAML_FILE']) as f:
-        doc = yaml.safe_load(f) or {}
-    name = doc.get('name', '') or ''
-    eps = doc.get('endpoints') or []
-    out = [{'project': name, 'url': (ep.get('url', '') or '') if isinstance(ep, dict) else '', 'type': (ep.get('type', '') or '') if isinstance(ep, dict) else ''} for ep in eps]
-    print(json.dumps({'pairs': out}))
-except Exception as e:
-    print('PARSE_ERROR:' + str(e), file=sys.stderr)
-    sys.exit(1)
-") || { echo "Failed to parse $YAML" >&2; exit 1; }
+  PARSED=$(node "$FRAMEWORK_DIR/scripts/read-health-endpoints.js" --agent "$YAML") \
+    || { echo "Failed to parse $YAML" >&2; exit 1; }
 fi
 
 PAIR_COUNT=$(echo "$PARSED" | jq '.pairs | length')
