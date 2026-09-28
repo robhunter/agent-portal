@@ -185,6 +185,7 @@ CYCLE_FAILED_MARKER="/tmp/agent-${AGENT_NAME}-cycle-failed"
 touch "$CYCLE_FAILED_MARKER"
 
 # Clone/pull workspaces from agent.yaml
+. "$FRAMEWORK_DIR/scripts/npm-install-workspace.sh"
 if [ "$WORKSPACES_COUNT" -gt 0 ] 2>/dev/null; then
   for i in $(seq 0 $((WORKSPACES_COUNT - 1))); do
     repo_var="WORKSPACE_${i}_REPO"; path_var="WORKSPACE_${i}_PATH"
@@ -203,9 +204,9 @@ if [ "$WORKSPACES_COUNT" -gt 0 ] 2>/dev/null; then
       }
     fi
 
-    if [ "$ws_npm" = "true" ] && [ -f "$ws_path/package.json" ]; then
-      step "npm install for $ws_repo"
-      (cd "$ws_path" && npm install --production 200>&- 2>&1) || step "npm install failed for $ws_repo (non-fatal)"
+    if npm_install_mode_installs "$ws_npm" && [ -f "$ws_path/package.json" ]; then
+      step "npm install ($ws_npm) for $ws_repo"
+      npm_install_workspace "$ws_path" "$ws_npm" || step "npm install failed for $ws_repo (non-fatal)"
     fi
   done
 fi

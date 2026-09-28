@@ -97,7 +97,8 @@ console.log(`WORKSPACES_COUNT=${workspaces.length}`);
 workspaces.forEach((ws, i) => {
   console.log(`WORKSPACE_${i}_REPO=${shellEscape(ws.repo)}`);
   console.log(`WORKSPACE_${i}_PATH=${shellEscape(ws.path)}`);
-  console.log(`WORKSPACE_${i}_NPM_INSTALL=${shellEscape(ws['npm-install'] ? 'true' : 'false')}`);
+  const npmInstall = ws['npm-install'] === 'dev' ? 'dev' : ws['npm-install'] ? 'true' : 'false';
+  console.log(`WORKSPACE_${i}_NPM_INSTALL=${shellEscape(npmInstall)}`);
 });
 
 const extraCron = doc['extra-cron'] || [];

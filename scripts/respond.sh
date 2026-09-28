@@ -51,6 +51,7 @@ CYCLE_START_EPOCH=$(date +%s)
 bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" cycle_start "Respond cycle (journal)"
 
 # Clone/pull workspaces from agent.yaml
+. "$FRAMEWORK_DIR/scripts/npm-install-workspace.sh"
 if [ "$WORKSPACES_COUNT" -gt 0 ] 2>/dev/null; then
   for i in $(seq 0 $((WORKSPACES_COUNT - 1))); do
     repo_var="WORKSPACE_${i}_REPO"; path_var="WORKSPACE_${i}_PATH"
@@ -67,8 +68,8 @@ if [ "$WORKSPACES_COUNT" -gt 0 ] 2>/dev/null; then
       }
     fi
 
-    if [ "$ws_npm" = "true" ] && [ -f "$ws_path/package.json" ]; then
-      (cd "$ws_path" && npm install --production 200>&- 2>&1) || echo "Warning: npm install failed for $ws_repo"
+    if npm_install_mode_installs "$ws_npm" && [ -f "$ws_path/package.json" ]; then
+      npm_install_workspace "$ws_path" "$ws_npm" || echo "Warning: npm install failed for $ws_repo"
     fi
   done
 fi
