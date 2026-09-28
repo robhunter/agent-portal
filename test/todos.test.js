@@ -338,6 +338,228 @@ describe('Todos API', () => {
   });
 });
 
+// --- Files with sections the portal does not own ---
+
+const SECTIONED = `## Todos
+
+- [ ] Reply to the partner email
+  > Done when: sent
+- [x] Renew the domain
+  with the two-year option
+- [ ] Review the pricing page
+- [X] Rotate the API key
+
+## Parked — real, but not pressing
+
+- [ ] Try the new analytics tool
+- [ ] Draft the launch post
+
+Parked until the launch date is set.
+
+## Done — archive
+
+- [x] Set up the status page
+- [x] Move DNS to the new provider
+  > Checked on 2026-08-01
+
+## Notes
+
+### 2026-08-20T10:00:00Z | rob | note
+
+Please keep the archive.
+
+### 2026-08-21T09:00:00Z | pm | note
+
+Will do.
+
+## Reference — logo and banner URLs
+
+- logo: https://example.com/logo.png
+- banner: https://example.com/banner.png
+`;
+
+const SHAPES = {
+  sectioned: SECTIONED,
+  notesFirst: '# Human todos\n\n## Notes\n\n### 2026-08-20T10:00:00Z | rob | note\n\nHi.\n\n## Todos\n\n- [ ] One\n- [ ] Two\n',
+  repeatedTodosHeading: '## Todos\n\n- [ ] Mine\n\n## Todos\n\n- [ ] Pasted twice\n',
+  checkboxesBeforeAnyHeading: '- [ ] Loose item\n\n## Todos\n- [ ] Owned\n## Later\n- [ ] Not owned',
+  onlyCustomSections: '## Backlog\n\n- [ ] Someday\n',
+  empty: '',
+};
+
+function firstLine(todo) {
+  return todo.text.split('\n')[0];
+}
+
+function createTodosAndBadgesServer(agentDir) {
+  const config = {
+    name: 'Test',
+    port: 0,
+    agentDir,
+    _serverStartTime: Date.now(),
+    authors: {},
+    features: { tabs: ['journal', 'status', 'todos'] },
+  };
+  const routes = {};
+  require('../lib/routes/todos').register(routes, config);
+  require('../lib/routes/badges').register(routes, config);
+  return createServer(config, { routes, getHTML: () => '<html>test</html>' });
+}
+
+function lineDiff(before, after) {
+  const a = before.split('\n');
+  const b = after.split('\n');
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let endA = a.length;
+  let endB = b.length;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) { endA--; endB--; }
+  return { removed: a.slice(start, endA), added: b.slice(start, endB) };
+}
+
+describe('parseTodos with sections it does not own', () => {
+  it('lists only the checkboxes under ## Todos, up to the next ## heading of any kind', () => {
+    const { todos } = parseTodos(SECTIONED);
+    assert.deepEqual(todos.map(firstLine), [
+      'Reply to the partner email',
+      'Renew the domain',
+      'Review the pricing page',
+      'Rotate the API key',
+    ]);
+    assert.deepEqual(todos.map(t => t.done), [false, true, false, true]);
+    assert.equal(todos[0].details, 'Done when: sent');
+    assert.equal(todos[1].text, 'Renew the domain\nwith the two-year option');
+  });
+
+  it('ends the notes at the next ## heading, so a section after Notes is not read into the last note', () => {
+    const { notes } = parseTodos(SECTIONED);
+    assert.deepEqual(notes.map(n => n.content), ['Please keep the archive.', 'Will do.']);
+  });
+
+  it('owns only the first ## Todos section and reads it wherever it sits', () => {
+    assert.deepEqual(parseTodos(SHAPES.notesFirst).todos.map(firstLine), ['One', 'Two']);
+    assert.deepEqual(parseTodos(SHAPES.repeatedTodosHeading).todos.map(firstLine), ['Mine']);
+    assert.deepEqual(parseTodos(SHAPES.checkboxesBeforeAnyHeading).todos.map(firstLine), ['Owned']);
+    assert.deepEqual(parseTodos(SHAPES.onlyCustomSections).todos, []);
+  });
+
+  it('writes every shape back byte for byte when nothing changed', () => {
+    for (const [shape, content] of Object.entries(SHAPES)) {
+      if (!content) continue;
+      const { todos, notes } = parseTodos(content);
+      assert.equal(serializeTodos(todos, notes, content), content, shape);
+    }
+  });
+
+  it('adds a ## Todos section after the text above the first heading when the file has none', () => {
+    const content = '# Human todos\n\n## Backlog\n\n- [ ] Someday\n';
+    const { todos, notes } = parseTodos(content);
+    todos.push({ text: 'New', done: false, details: '' });
+    assert.equal(serializeTodos(todos, notes, content), '# Human todos\n\n## Todos\n\n- [ ] New\n\n## Backlog\n\n- [ ] Someday\n');
+  });
+});
+
+describe('Todos API on a file with sections it does not own', () => {
+  let server, port, tmpDir, todosFile;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'todos-sections-'));
+    todosFile = path.join(tmpDir, 'human_todos.md');
+    server = createTodosAndBadgesServer(tmpDir);
+    await new Promise(resolve => server.listen(0, resolve));
+    port = server.address().port;
+  });
+
+  after(() => {
+    server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  async function send(method, urlPath, body) {
+    return fetchJSON(port, urlPath, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  // These tests write the file directly, as an agent does, which the API's
+  // 10-second GET cache cannot see; a new query string per read skips it.
+  let reads = 0;
+  async function listTodos() {
+    return (await fetchJSON(port, `/api/todos?read=${reads++}`)).data.todos;
+  }
+
+  it('gives the badge and the tab the same open count for every shape', async () => {
+    for (const [shape, content] of Object.entries(SHAPES)) {
+      fs.writeFileSync(todosFile, content);
+      const badges = (await fetchJSON(port, '/api/badges')).data;
+      const listed = await listTodos();
+      assert.equal(badges.todos || 0, listed.filter(t => !t.done).length, shape);
+    }
+    fs.writeFileSync(todosFile, SECTIONED);
+    assert.equal((await fetchJSON(port, '/api/badges')).data.todos, 2);
+  });
+
+  it('keeps done items from other sections out of the list the Completed group is built from', async () => {
+    fs.writeFileSync(todosFile, SECTIONED);
+    const todos = await listTodos();
+    assert.deepEqual(todos.filter(t => t.done).map(firstLine), ['Renew the domain', 'Rotate the API key']);
+  });
+
+  it('toggling a todo changes only its checkbox', async () => {
+    fs.writeFileSync(todosFile, SECTIONED);
+    const todos = await listTodos();
+    await send('PUT', '/api/todos', { index: todos.findIndex(t => t.text === 'Review the pricing page'), done: true });
+    assert.deepEqual(lineDiff(SECTIONED, fs.readFileSync(todosFile, 'utf-8')), {
+      removed: ['- [ ] Review the pricing page'],
+      added: ['- [x] Review the pricing page'],
+    });
+  });
+
+  it('adding a todo inserts one line after the last todo', async () => {
+    fs.writeFileSync(todosFile, SECTIONED);
+    await send('POST', '/api/todos', { text: 'Call the bank' });
+    const after = fs.readFileSync(todosFile, 'utf-8');
+    assert.equal(after, SECTIONED.replace('- [X] Rotate the API key\n', '- [X] Rotate the API key\n- [ ] Call the bank\n'));
+  });
+
+  it('deleting a todo removes its lines and nothing else', async () => {
+    fs.writeFileSync(todosFile, SECTIONED);
+    const todos = await listTodos();
+    await send('DELETE', '/api/todos', { index: todos.findIndex(t => firstLine(t) === 'Renew the domain') });
+    assert.equal(fs.readFileSync(todosFile, 'utf-8'), SECTIONED.replace('- [x] Renew the domain\n  with the two-year option\n', ''));
+  });
+
+  it('adding a note appends it to ## Notes and leaves the section after it alone', async () => {
+    fs.writeFileSync(todosFile, SECTIONED);
+    await send('POST', '/api/todos/note', { text: 'Keep the parked list too.', author: 'rob' });
+    const after = fs.readFileSync(todosFile, 'utf-8');
+    const note = /\n\n### \S+ \| rob \| note\n\nKeep the parked list too\.(?=\n\n## Reference)/;
+    assert.match(after, note);
+    assert.equal(after.replace(note, ''), SECTIONED);
+  });
+
+  it('every index the tab can send resolves to the todo shown at that index', async () => {
+    fs.writeFileSync(todosFile, SECTIONED);
+    const todos = await listTodos();
+    for (let index = 0; index < todos.length; index++) {
+      fs.writeFileSync(todosFile, SECTIONED);
+      await send('PUT', '/api/todos', { index, done: !todos[index].done });
+      const { removed, added } = lineDiff(SECTIONED, fs.readFileSync(todosFile, 'utf-8'));
+      assert.equal(removed.length, 1, `index ${index}`);
+      assert.ok(removed[0].endsWith(firstLine(todos[index])), `index ${index} toggled ${removed[0]}`);
+      assert.equal(added[0].slice(6), removed[0].slice(6), `index ${index}`);
+
+      fs.writeFileSync(todosFile, SECTIONED);
+      await send('DELETE', '/api/todos', { index });
+      const deleted = lineDiff(SECTIONED, fs.readFileSync(todosFile, 'utf-8'));
+      assert.deepEqual(deleted.added, [], `index ${index}`);
+      assert.ok(deleted.removed[0].endsWith(firstLine(todos[index])), `index ${index} deleted ${deleted.removed[0]}`);
+    }
+  });
+});
+
 // --- Test clear-done-todos.sh script ---
 describe('clear-done-todos.sh', () => {
   let tmpDir;
@@ -376,5 +598,19 @@ Keep this note.
     assert.ok(!content.includes('Remove this'));
     assert.ok(!content.includes('Also remove'));
     assert.ok(content.includes('Keep this note'));
+  });
+
+  it('clears checked todos under ## Todos with their continuation lines, and leaves other sections alone', () => {
+    const todosFile = path.join(tmpDir, 'human_todos.md');
+    fs.writeFileSync(todosFile, SECTIONED);
+
+    const { execSync } = require('child_process');
+    const scriptPath = path.resolve(__dirname, '..', 'scripts', 'clear-done-todos.sh');
+    execSync(`bash "${scriptPath}" "${tmpDir}"`);
+
+    assert.equal(
+      fs.readFileSync(todosFile, 'utf-8'),
+      SECTIONED.replace('- [x] Renew the domain\n  with the two-year option\n', '').replace('- [X] Rotate the API key\n', ''),
+    );
   });
 });

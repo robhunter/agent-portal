@@ -2,7 +2,8 @@
 # scripts/clear-done-todos.sh — Remove checked todos from human_todos.md
 # Usage: clear-done-todos.sh <agent-dir>
 # Run at end of cycle (post-cycle hook) to clear completed todos.
-# Only acts if human_todos.md exists and has checked items.
+# Only acts if human_todos.md exists and has checked items under ## Todos;
+# checked items in other sections (an archive, say) stay.
 # Respects portal.config.json's dataDir (default ".").
 
 AGENT_DIR="${1:-.}"
@@ -19,12 +20,4 @@ if [ ! -f "$TODOS_FILE" ]; then
   exit 0
 fi
 
-# Check if there are any checked todos
-if ! grep -q '^\- \[x\] \|^\- \[X\] ' "$TODOS_FILE"; then
-  exit 0
-fi
-
-# Remove checked todo lines (case-insensitive x)
-sed -i '/^- \[[xX]\] /d' "$TODOS_FILE"
-
-echo "Cleared completed todos from $TODOS_FILE"
+node "$FRAMEWORK_DIR/scripts/clear-done-todos.js" "$TODOS_FILE"
