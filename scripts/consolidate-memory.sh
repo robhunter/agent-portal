@@ -236,18 +236,14 @@ LEARNINGS_TO_ADD=$(echo "$BLOCK1" | awk '
 TODAY=$(date +%Y-%m-%d)
 if [ -n "$LEARNINGS_TO_ADD" ]; then
   echo "Adding new operational learnings..."
-  LEARN_COUNT=0
-  while IFS= read -r learning; do
-    [ -z "$learning" ] && continue
-    # Escape quotes for YAML
-    learning_escaped=$(echo "$learning" | sed 's/"/\\"/g')
-    echo "  - id: $NEXT_ID" >> "$OPERATIONAL_FILE"
-    echo "    observation: \"$learning_escaped\"" >> "$OPERATIONAL_FILE"
-    echo "    added: \"$TODAY\"" >> "$OPERATIONAL_FILE"
-    NEXT_ID=$((NEXT_ID + 1))
-    LEARN_COUNT=$((LEARN_COUNT + 1))
-  done <<< "$LEARNINGS_TO_ADD"
-  echo "Added $LEARN_COUNT new learnings to operational.yaml"
+  # Inserted at the end of the learnings: list, not appended to the file, and parse-checked
+  # with PyYAML when the memory venv has it (agent-portal#310). On failure the file is left
+  # as it was and the learnings are printed, so the rest of the consolidation still runs.
+  MEMORY_PYTHON="$FRAMEWORK_DIR/scripts/memory-venv/bin/python"
+  [ -x "$MEMORY_PYTHON" ] || MEMORY_PYTHON=python3
+  printf '%s\n' "$LEARNINGS_TO_ADD" \
+    | "$MEMORY_PYTHON" "$FRAMEWORK_DIR/scripts/consolidate-learnings.py" "$OPERATIONAL_FILE" "$NEXT_ID" "$TODAY" \
+    || echo "Warning: no learnings were added to operational.yaml (see above)."
 else
   echo "No new operational learnings identified."
 fi
