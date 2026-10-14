@@ -170,6 +170,25 @@ The framework reads `dataDir` from `portal.config.json` and propagates it via th
 - **Shell scripts** source `read-harness-config.sh` (exports `DATA_DIR`)
 - **Python scripts** (`memory-index.py`, `memory-search.py`) accept `--data-dir` or the `DATA_DIR` env var
 
+### Harness
+
+The `harness` object picks the CLI that runs each cycle. Omit it for Claude Code.
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `type` | Harness the agent runs by default: `claude-code`, `codex`, `letta-code`, `goose`, `script` | `"claude-code"` |
+| `types` | Every harness the agent can run. `vm-setup.sh` installs the Codex CLI when `codex` is listed; the portal reports auth for each | `[type]` |
+| `command` | Your own launcher (a wrapper script). When set, the wrapper chooses the harness and the override below does not apply | `claude --print` for claude-code, `scripts/codex-harness.sh` for codex |
+| `extraFlags` | Flags appended to the default type's command | Claude Code: `--effort max` + the allowed-tools list |
+
+**Switching harness.** With two or more `types` and no `command`, a one-word `.harness-override` file in the agent directory (e.g. `codex`) selects which listed harness runs, starting with the next cycle — no restart. Delete the file to go back to `type`. Flenderson's harness dropdown writes this file; add `.harness-override` to the agent's `.gitignore`. `GET /api/harness/status` reports `selected`, `defaultType` and `switchable`.
+
+```json
+"harness": { "type": "claude-code", "types": ["claude-code", "codex"] }
+```
+
+The built-in Codex launcher (`scripts/codex-harness.sh`) runs `codex exec` with the sandbox bypassed (the container is the sandbox) and high reasoning effort, trusts the Sandcat CA, passes the agent's `.mcp.json` stdio servers to Codex, and turns a Codex run that exits 0 after a rate-limit or stream error into a failure so `wake.sh` retries it. Codex needs a one-time `codex login --device-auth` in the container; `~/.codex` is bind-mounted from the host. Codex reads `AGENTS.md`, not `CLAUDE.md`, so give the agent an `AGENTS.md` that points at its instructions.
+
 ### Features
 
 The `features` object controls which tabs and routes are enabled. Omit a key to disable it.
