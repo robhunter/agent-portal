@@ -1406,6 +1406,9 @@ describe('GET /api/harness/status', () => {
     assert.equal(data.loggedIn, true);
     assert.equal(data.harnessType, 'multi');
     assert.deepEqual(data.harnesses, [{ type: 'codex', loggedIn: true }, { type: 'script', loggedIn: true }]);
+    // A wrapper `command` owns harness choice, so the override does not apply.
+    assert.equal(data.selected, 'codex');
+    assert.equal(data.switchable, false);
   });
 
   it('a missing codex login fails the combined status', async () => {
@@ -1414,6 +1417,38 @@ describe('GET /api/harness/status', () => {
     fs.rmSync(home, { recursive: true, force: true });
     assert.equal(data.loggedIn, false);
     assert.deepEqual(data.harnesses, [{ type: 'codex', loggedIn: false }, { type: 'script', loggedIn: true }]);
+  });
+});
+
+describe('GET /api/harness/status — selection', () => {
+  let agentDir;
+  before(() => { agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-select-')); });
+  after(() => fs.rmSync(agentDir, { recursive: true, force: true }));
+
+  async function status() {
+    const { server } = createTestServer({ agentDir, harness: { type: 'claude-code', types: ['claude-code', 'script'] } });
+    await new Promise(resolve => server.listen(0, resolve));
+    const out = await fetchJSON(server.address().port, '/api/harness/status');
+    server.close();
+    return out.data;
+  }
+
+  it('reports the default type with no override', async () => {
+    fs.rmSync(path.join(agentDir, '.harness-override'), { force: true });
+    const data = await status();
+    assert.equal(data.selected, 'claude-code');
+    assert.equal(data.defaultType, 'claude-code');
+    assert.equal(data.switchable, true);
+  });
+
+  it('reports the override when it names a listed type', async () => {
+    fs.writeFileSync(path.join(agentDir, '.harness-override'), 'script\n');
+    assert.equal((await status()).selected, 'script');
+  });
+
+  it('ignores an override that is not listed', async () => {
+    fs.writeFileSync(path.join(agentDir, '.harness-override'), 'goose');
+    assert.equal((await status()).selected, 'claude-code');
   });
 });
 

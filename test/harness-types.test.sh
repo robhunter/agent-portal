@@ -1,5 +1,6 @@
 #!/bin/bash
-# harness-types.test.sh — read-harness-config.sh exports HARNESS_TYPES from harness.types or harness.type.
+# harness-types.test.sh — read-harness-config.sh exports HARNESS_TYPES from harness.types or harness.type,
+# and applies .harness-override.
 set -e
 
 FRAMEWORK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -37,6 +38,47 @@ echo '{"harness":{"type":"script","types":["codex","claude-code"]}}' > "$TMP/por
 codex_wanted && ok "codex in types installs codex" || fail "codex in types not detected"
 echo '{"harness":{"type":"claude-code"}}' > "$TMP/portal.config.json"
 codex_wanted && fail "claude-code only should not install codex" || ok "claude-code only skips codex"
+
+echo "# .harness-override"
+FW_CODEX="bash $FRAMEWORK_DIR/scripts/codex-harness.sh"
+echo '{"harness":{"type":"claude-code","types":["claude-code","codex"]}}' > "$TMP/portal.config.json"
+rm -f "$TMP/.harness-override"
+eval "$(bash "$SCRIPT" "$TMP")"
+[ "$HARNESS_TYPE" = "claude-code" ] && ok "no override runs the default type" || fail "HARNESS_TYPE=$HARNESS_TYPE"
+[ "$HARNESS_CMD" = "claude --print" ] && ok "default claude command" || fail "HARNESS_CMD=$HARNESS_CMD"
+case "$HARNESS_EXTRA_FLAGS" in "--effort max"*) ok "claude default flags applied";; *) fail "HARNESS_EXTRA_FLAGS=$HARNESS_EXTRA_FLAGS";; esac
+
+echo "codex" > "$TMP/.harness-override"
+eval "$(bash "$SCRIPT" "$TMP")"
+[ "$HARNESS_TYPE" = "codex" ] && ok "override selects codex" || fail "HARNESS_TYPE=$HARNESS_TYPE"
+[ "$HARNESS_DEFAULT_TYPE" = "claude-code" ] && ok "default type still reported" || fail "HARNESS_DEFAULT_TYPE=$HARNESS_DEFAULT_TYPE"
+[ "$HARNESS_CMD" = "$FW_CODEX" ] && ok "codex runs the framework harness script" || fail "HARNESS_CMD=$HARNESS_CMD"
+[ -z "$HARNESS_EXTRA_FLAGS" ] && ok "no claude flags passed to codex" || fail "HARNESS_EXTRA_FLAGS=$HARNESS_EXTRA_FLAGS"
+
+echo '{"harness":{"type":"claude-code","types":["claude-code","codex"],"extraFlags":"--effort high"}}' > "$TMP/portal.config.json"
+eval "$(bash "$SCRIPT" "$TMP")"
+[ -z "$HARNESS_EXTRA_FLAGS" ] && ok "default type's extraFlags dropped under override" || fail "HARNESS_EXTRA_FLAGS=$HARNESS_EXTRA_FLAGS"
+rm -f "$TMP/.harness-override"
+eval "$(bash "$SCRIPT" "$TMP")"
+[ "$HARNESS_EXTRA_FLAGS" = "--effort high" ] && ok "extraFlags kept for the default type" || fail "HARNESS_EXTRA_FLAGS=$HARNESS_EXTRA_FLAGS"
+
+echo '{"harness":{"type":"claude-code","types":["claude-code","codex"]}}' > "$TMP/portal.config.json"
+echo "goose" > "$TMP/.harness-override"
+WARN="$(bash "$SCRIPT" "$TMP" 2>&1 >/dev/null)"
+eval "$(bash "$SCRIPT" "$TMP" 2>/dev/null)"
+[ "$HARNESS_TYPE" = "claude-code" ] && ok "unlisted override ignored" || fail "HARNESS_TYPE=$HARNESS_TYPE"
+case "$WARN" in *"ignoring .harness-override 'goose'"*) ok "unlisted override warns";; *) fail "warning was: $WARN";; esac
+
+echo "codex" > "$TMP/.harness-override"
+echo '{"harness":{"type":"claude-code","types":["claude-code","codex"],"command":"bash scripts/w.sh"}}' > "$TMP/portal.config.json"
+eval "$(bash "$SCRIPT" "$TMP")"
+[ "$HARNESS_TYPE" = "claude-code" ] && [ "$HARNESS_CMD" = "bash scripts/w.sh" ] \
+  && ok "override ignored when the agent has its own wrapper command" || fail "HARNESS_TYPE=$HARNESS_TYPE HARNESS_CMD=$HARNESS_CMD"
+
+echo '{"harness":{"type":"codex"}}' > "$TMP/portal.config.json"
+rm -f "$TMP/.harness-override"
+eval "$(bash "$SCRIPT" "$TMP")"
+[ "$HARNESS_CMD" = "$FW_CODEX" ] && ok "codex as the default type also uses the framework script" || fail "HARNESS_CMD=$HARNESS_CMD"
 
 rm -rf "$TMP"
 

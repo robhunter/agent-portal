@@ -3,33 +3,63 @@
 #
 # Usage: eval "$(bash read-harness-config.sh /path/to/agent-dir)"
 #
-# Exports: HARNESS_TYPE, HARNESS_TYPES, HARNESS_CMD, HARNESS_EXTRA_FLAGS, DATA_DIR
+# Exports: HARNESS_TYPE, HARNESS_DEFAULT_TYPE, HARNESS_TYPES, HARNESS_CMD,
+#          HARNESS_EXTRA_FLAGS, DATA_DIR
 # Defaults: claude-code harness, DATA_DIR="." (backwards-compatible with the
 # pre-dataDir layout where all framework state lives at the agent root).
 #
-# Known harness types: claude-code, letta-code, goose, codex. Only claude-code
-# gets default extraFlags here — the others point `command` at a wrapper script
-# in the agent's own repo that carries its flags, since those flags depend on
-# paths that only exist inside the agent's container.
+# Known harness types: claude-code, letta-code, goose, codex.
+#
+# Harness selection (mirrors lib/harness-select.js):
+#   - `harness.type` is the default (HARNESS_DEFAULT_TYPE).
+#   - `harness.types` lists the harnesses the agent can run.
+#   - A one-word `.harness-override` file in the agent dir selects another
+#     listed type for every cycle until it is removed. Flenderson writes it.
+#     It applies only when the framework launches the harness itself (no
+#     `harness.command`); a wrapper command picks its own harness.
+#
+# Command resolution, when `harness.command` is not set:
+#   - claude-code → `claude --print` with CLAUDE_CODE_DEFAULT_FLAGS
+#   - codex       → the framework's scripts/codex-harness.sh
+#   - anything else → `claude --print` (legacy default)
+# `harness.extraFlags` belongs to the default type, so it is dropped when the
+# override selects a different one — claude flags mean nothing to codex.
 
 AGENT_DIR="${1:-.}"
 PORTAL_CONFIG="$AGENT_DIR/portal.config.json"
+OVERRIDE_FILE="$AGENT_DIR/.harness-override"
+SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Default extraFlags for claude-code: --effort max + full allowedTools list
 CLAUDE_CODE_DEFAULT_FLAGS="--effort max --allowedTools Bash Edit Write Read Glob Grep WebSearch WebFetch mcp__playwright__browser_click mcp__playwright__browser_close mcp__playwright__browser_console_messages mcp__playwright__browser_drag mcp__playwright__browser_evaluate mcp__playwright__browser_file_upload mcp__playwright__browser_fill_form mcp__playwright__browser_handle_dialog mcp__playwright__browser_hover mcp__playwright__browser_navigate mcp__playwright__browser_navigate_back mcp__playwright__browser_network_requests mcp__playwright__browser_press_key mcp__playwright__browser_resize mcp__playwright__browser_run_code mcp__playwright__browser_select_option mcp__playwright__browser_snapshot mcp__playwright__browser_tabs mcp__playwright__browser_take_screenshot mcp__playwright__browser_type mcp__playwright__browser_wait_for"
 
 if [ -f "$PORTAL_CONFIG" ] && command -v node >/dev/null 2>&1; then
-  eval "$(node -e "
-    const c = JSON.parse(require('fs').readFileSync('$PORTAL_CONFIG', 'utf-8'));
+  eval "$(PORTAL_CONFIG="$PORTAL_CONFIG" OVERRIDE_FILE="$OVERRIDE_FILE" SCRIPTS_DIR="$SCRIPTS_DIR" node -e "
+    const fs = require('fs');
+    const c = JSON.parse(fs.readFileSync(process.env.PORTAL_CONFIG, 'utf-8'));
     const h = c.harness || {};
-    console.log('HARNESS_TYPE=' + JSON.stringify(h.type || 'claude-code'));
-    console.log('HARNESS_TYPES=' + JSON.stringify((Array.isArray(h.types) && h.types.length ? h.types : [h.type || 'claude-code']).join(' ')));
-    console.log('HARNESS_CMD=' + JSON.stringify(h.command || 'claude --print'));
-    console.log('HARNESS_EXTRA_FLAGS=' + JSON.stringify(h.extraFlags || ''));
+    const def = h.type || 'claude-code';
+    const types = Array.isArray(h.types) && h.types.length ? h.types : [def];
+    let selected = def;
+    if (types.length > 1 && !h.command) {
+      let override = '';
+      try { override = fs.readFileSync(process.env.OVERRIDE_FILE, 'utf-8').trim(); } catch {}
+      if (override && types.includes(override)) selected = override;
+      else if (override) console.error('read-harness-config: ignoring .harness-override \\'' + override + '\\' (not in harness.types: ' + types.join(', ') + ')');
+    }
+    let cmd = h.command;
+    if (!cmd) cmd = selected === 'codex' ? 'bash ' + process.env.SCRIPTS_DIR + '/codex-harness.sh' : 'claude --print';
+    const flags = selected === def ? (h.extraFlags || '') : '';
+    console.log('HARNESS_TYPE=' + JSON.stringify(selected));
+    console.log('HARNESS_DEFAULT_TYPE=' + JSON.stringify(def));
+    console.log('HARNESS_TYPES=' + JSON.stringify(types.join(' ')));
+    console.log('HARNESS_CMD=' + JSON.stringify(cmd));
+    console.log('HARNESS_EXTRA_FLAGS=' + JSON.stringify(flags));
     console.log('DATA_DIR=' + JSON.stringify(c.dataDir || '.'));
   ")"
 else
   HARNESS_TYPE="claude-code"
+  HARNESS_DEFAULT_TYPE="claude-code"
   HARNESS_TYPES="claude-code"
   HARNESS_CMD="claude --print"
   HARNESS_EXTRA_FLAGS=""
@@ -42,6 +72,7 @@ if [ "$HARNESS_TYPE" = "claude-code" ] && [ -z "$HARNESS_EXTRA_FLAGS" ]; then
 fi
 
 echo "export HARNESS_TYPE=${HARNESS_TYPE@Q}"
+echo "export HARNESS_DEFAULT_TYPE=${HARNESS_DEFAULT_TYPE@Q}"
 echo "export HARNESS_TYPES=${HARNESS_TYPES@Q}"
 echo "export HARNESS_CMD=${HARNESS_CMD@Q}"
 echo "export HARNESS_EXTRA_FLAGS=${HARNESS_EXTRA_FLAGS@Q}"
