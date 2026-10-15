@@ -147,6 +147,14 @@ cp "$TMP/col0.want" "$AGENT/memory/operational.yaml"
 sed -i '/^- id: [23]$/,+2d' "$AGENT/memory/operational.yaml"
 printf '{"ts":"2026-10-06T10:00:00+00:00","type":"cycle_start","summary":"wake"}\n{"ts":"2026-10-06T10:30:00+00:00","type":"work","summary":"merged"}\n' > "$AGENT/logs/events.jsonl"
 printf '### 2026-10-06T10:30:00+00:00 | coder | cycle\nmerged a PR\n' > "$AGENT/journals/2026-10.md"
+# consolidate-memory.sh stamps new learnings with `date +%Y-%m-%d`; pin that day to
+# the one col0.want expects, so the comparison holds on any day the suite runs.
+REAL_DATE=$(command -v date)
+cat > "$TMP/bin/date" <<EOF
+#!/bin/bash
+if [ "\$*" = "+%Y-%m-%d" ]; then echo 2026-10-06; else exec "$REAL_DATE" "\$@"; fi
+EOF
+chmod +x "$TMP/bin/date"
 cat > "$TMP/bin/claude" <<'EOF'
 #!/bin/bash
 cat >/dev/null
