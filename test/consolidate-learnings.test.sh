@@ -173,13 +173,10 @@ if PATH="$TMP/bin:$PATH" bash "$FRAMEWORK_DIR/scripts/consolidate-memory.sh" "$A
 else
   fail "the consolidation failed:"; sed 's/^/      /' "$TMP/run.log"
 fi
-# consolidate-memory.sh stamps new learnings with the day it runs, so the
-# expected file carries today's date rather than the fixed one above.
-sed "s/added: \"2026-10-06\"/added: \"$(date +%Y-%m-%d)\"/" "$TMP/col0.want" > "$TMP/e2e.want"
-if diff -u "$TMP/e2e.want" "$AGENT/memory/operational.yaml" >/dev/null; then
+if diff -u "$TMP/col0.want" "$AGENT/memory/operational.yaml" >/dev/null; then
   ok "writes the stub's two learnings as ids 2 and 3 at the end of the column-0 list"
 else
-  fail "unexpected operational.yaml:"; diff -u "$TMP/e2e.want" "$AGENT/memory/operational.yaml" | sed 's/^/      /'
+  fail "unexpected operational.yaml:"; diff -u "$TMP/col0.want" "$AGENT/memory/operational.yaml" | sed 's/^/      /'
 fi
 grep -q 'last_consolidated: "2026-10-06T11:00:00+00:00"' "$AGENT/memory/consolidated-insights.yaml" && ok "still writes consolidated-insights.yaml" || fail "consolidated-insights.yaml not written"
 
