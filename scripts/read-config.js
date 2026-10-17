@@ -60,6 +60,12 @@ function shellEscape(val) {
 const scalars = {
   AGENT_NAME: doc.name,
   AGENT_REPO: doc.repo,
+  // Where commit.sh pushes the agent's own repo, and which env var holds the
+  // token for it. Both optional: empty remote means "derive from `repo` on
+  // GitHub" and the token defaults to GH_TOKEN, which is the behaviour every
+  // agent had before these existed.
+  AGENT_GIT_REMOTE: doc['git-remote'],
+  AGENT_GIT_TOKEN_ENV: doc['git-token-env'],
   AGENT_PORT: doc.port,
   AGENT_LOCK_FILE: doc['lock-file'],
   AGENT_CRON_FILE: doc['cron-file'],

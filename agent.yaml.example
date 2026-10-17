@@ -4,6 +4,9 @@
 # Agent identity
 name: my-agent                       # used in logs, PID files, lock files, temp file naming
 repo: your-org/your-agent            # GitHub org/repo for push URL derivation
+# Optional: push the agent's own repo somewhere other than GitHub.
+# git-remote: https://dev.azure.com/your-org/your-project/_git/your-agent  # no credentials in the URL
+# git-token-env: AZURE_DEVOPS_TOKEN  # env var holding that remote's token (default GH_TOKEN)
 port: 8080                           # portal server port
 lock-file: /tmp/my-agent.lock         # mutex file path
 cron-file: /etc/cron.d/my-agent      # cron file path

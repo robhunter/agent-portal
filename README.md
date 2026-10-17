@@ -239,6 +239,22 @@ The `sidebar` object controls the sidebar layout.
 | `projectsDir` | `string` | Subdirectory of agentDir containing project `.md` files (when type is `"projects"`) |
 | `runningLog` | `true` | Show "Running Log" entry in project sidebar for cross-project journal |
 
+## Where the agent's repo is pushed
+
+`scripts/commit.sh` commits the agent's own repo at the end of every cycle and pushes `main`. Two optional `agent.yaml` keys choose where:
+
+| Key | Meaning | Default |
+|-----|---------|---------|
+| `git-remote` | Full URL of the agent's repo, without credentials. `https` URLs get the token inserted; `file://` and ssh URLs are pushed as-is. | `https://github.com/<repo>.git` |
+| `git-token-env` | Name of the environment variable holding the token for that remote. | `GH_TOKEN` |
+
+```yaml
+git-remote: https://dev.azure.com/your-org/your-project/_git/your-agent
+git-token-env: AZURE_DEVOPS_TOKEN
+```
+
+Agents that set neither keep the previous behaviour, including skipping the push quietly when `GH_TOKEN` is unset. A push that fails keeps the commit locally (the next successful push carries it), does not fail the cycle, and is logged as an `error` event with the reason; the token is redacted from all output.
+
 ## Example Configs
 
 See `examples/` for complete configs:
