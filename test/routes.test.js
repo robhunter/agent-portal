@@ -1411,6 +1411,26 @@ describe('GET /api/harness/status', () => {
     assert.equal(data.switchable, false);
   });
 
+  it('a missing login on an idle harness does not fail the status', async () => {
+    // script runs the cycle and needs no login; codex is listed for switching
+    // and nobody has logged in yet. The agent is not degraded.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'));
+    const prev = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = home;
+    try {
+      const { server } = createTestServer({ harness: { type: 'script', types: ['script', 'codex'] } });
+      await new Promise(resolve => server.listen(0, resolve));
+      const { data } = await fetchJSON(server.address().port, '/api/harness/status');
+      server.close();
+      assert.equal(data.selected, 'script');
+      assert.equal(data.loggedIn, true);
+      assert.deepEqual(data.harnesses, [{ type: 'script', loggedIn: true }, { type: 'codex', loggedIn: false }]);
+    } finally {
+      if (prev === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = prev;
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it('a missing codex login fails the combined status', async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'));
     const { data } = await multiHarnessStatus(home);
