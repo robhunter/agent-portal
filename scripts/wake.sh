@@ -220,11 +220,14 @@ step "pre-cycle hooks done"
 # Record auth confirmation timestamp (non-fatal)
 AUTH_CONFIRMED_FILE="$AGENT_DIR/$DATA_DIR/logs/.auth-last-confirmed"
 mkdir -p "$(dirname "$AUTH_CONFIRMED_FILE")"
+# Only the selected harness can fail this cycle; an idle harness is checked
+# for the step log and never logs an error event.
 for _harness in $HARNESS_TYPES; do
+  if [ "$_harness" = "$HARNESS_TYPE" ]; then _active=1; else _active=0; fi
   case "$_harness" in
     claude-code)
       if claude auth status --json 2>/dev/null | grep -q '"loggedIn": *true'; then
-        date -Iseconds > "$AUTH_CONFIRMED_FILE" 2>/dev/null || true
+        [ "$_active" = 1 ] && date -Iseconds > "$AUTH_CONFIRMED_FILE" 2>/dev/null || true
         step "claude auth confirmed"
       else
         step "claude auth NOT confirmed"
@@ -232,7 +235,7 @@ for _harness in $HARNESS_TYPES; do
       ;;
     letta-code)
       # Letta uses a static API key — no expiring auth to check
-      date -Iseconds > "$AUTH_CONFIRMED_FILE" 2>/dev/null || true
+      [ "$_active" = 1 ] && date -Iseconds > "$AUTH_CONFIRMED_FILE" 2>/dev/null || true
       step "letta auth assumed (static API key)"
       ;;
     codex)
@@ -241,12 +244,14 @@ for _harness in $HARNESS_TYPES; do
       # presence of the credential file is the check. Its absence is fatal for the
       # cycle and needs a human (`codex login --device-auth`), so say so loudly.
       if [ -s "${CODEX_HOME:-$HOME/.codex}/auth.json" ]; then
-        date -Iseconds > "$AUTH_CONFIRMED_FILE" 2>/dev/null || true
+        [ "$_active" = 1 ] && date -Iseconds > "$AUTH_CONFIRMED_FILE" 2>/dev/null || true
         step "codex auth present (${CODEX_HOME:-$HOME/.codex}/auth.json)"
-      else
+      elif [ "$_active" = 1 ]; then
         step "codex auth MISSING — run 'codex login --device-auth' in this container"
         bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" error \
           "Codex credentials missing at ${CODEX_HOME:-$HOME/.codex}/auth.json; cycle will fail until a human re-authenticates"
+      else
+        step "codex auth missing, and codex is not this cycle's harness — no error logged"
       fi
       ;;
     *)
