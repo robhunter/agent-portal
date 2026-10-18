@@ -4,7 +4,11 @@
 set -e
 
 FRAMEWORK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SCRIPTS="$FRAMEWORK_DIR/scripts"
+SUITE_TMP=$(mktemp -d -t commit-remote-suite-XXXXXX)
+trap 'rm -rf "$SUITE_TMP"' EXIT
+. "$FRAMEWORK_DIR/test/helpers/offline-framework.sh"
+make_offline_framework "$FRAMEWORK_DIR" "$SUITE_TMP/framework"
+SCRIPTS="$SUITE_TMP/framework/scripts"
 
 OK=0
 FAIL=0
@@ -12,12 +16,11 @@ ok()   { echo "  ok - $*"; OK=$((OK+1)); }
 fail() { echo "  not ok - $*"; FAIL=$((FAIL+1)); }
 
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@localhost GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@localhost
-unset GH_TOKEN TEST_PUSH_TOKEN DATA_DIR
 
 # An agent repo with a change to commit. $1 = extra agent.yaml lines,
 # $2 = its repo line (default `repo: example/test`).
 make_agent() {
-  local tmp; tmp=$(mktemp -d -t commit-remote-XXXXXX)
+  local tmp; tmp=$(mktemp -d "$SUITE_TMP/agent-XXXXXX")
   printf 'name: T\n%s\n%s\n' "${2:-repo: example/test}" "$1" > "$tmp/agent.yaml"
   (cd "$tmp" && git init -q -b main && echo x > f && git add -A && git commit -qm init && echo y > f)
   echo "$tmp"
@@ -62,7 +65,7 @@ events "$TMP" | grep -q 'agent.yaml sets neither git-remote nor repo' && ok "eve
 rm -rf "$TMP"
 
 echo "# git-remote to a local bare repo: pushes there"
-BARE=$(mktemp -d -t commit-remote-bare-XXXXXX); git init -q --bare -b main "$BARE"
+BARE=$(mktemp -d "$SUITE_TMP/bare-XXXXXX"); git init -q --bare -b main "$BARE"
 TMP=$(make_agent "git-remote: file://$BARE")
 bash "$SCRIPTS/commit.sh" "$TMP" "t" >/dev/null 2>&1
 [ "$(git -C "$BARE" rev-parse main 2>/dev/null)" = "$(git -C "$TMP" rev-parse main)" ] \
@@ -89,9 +92,24 @@ rm -rf "$TMP"
 echo "# https remote with a token: token used, never printed or logged"
 TMP=$(make_agent 'git-remote: https://someorg@127.0.0.1:1/o/p/_git/r
 git-token-env: TEST_PUSH_TOKEN')
-OUT=$(TEST_PUSH_TOKEN=s3cr3t-tok bash "$SCRIPTS/commit.sh" "$TMP" "t" 2>&1)
+mkdir -p "$SUITE_TMP/bin"
+export COMMIT_TEST_REAL_GIT="$(command -v git)" COMMIT_TEST_PUSH_LOG="$SUITE_TMP/push-url"
+cat > "$SUITE_TMP/bin/git" <<'STUB'
+#!/bin/bash
+if [ "$1" = push ]; then
+  printf '%s\n' "$2" > "$COMMIT_TEST_PUSH_LOG"
+  printf 'fatal: rejected push to %s\n' "$2" >&2
+  exit 1
+fi
+exec "$COMMIT_TEST_REAL_GIT" "$@"
+STUB
+chmod +x "$SUITE_TMP/bin/git"
+OUT=$(PATH="$SUITE_TMP/bin:$PATH" TEST_PUSH_TOKEN=s3cr3t-tok bash "$SCRIPTS/commit.sh" "$TMP" "t" 2>&1)
+[ "$(cat "$COMMIT_TEST_PUSH_LOG")" = 'https://s3cr3t-tok@127.0.0.1:1/o/p/_git/r' ] \
+  && ok "push receives the selected token and replaces the URL username" || fail "push URL differs from fixture"
 [ "$(error_events "$TMP")" = 1 ] && ok "failed push logged" || fail "events: $(events "$TMP")"
 ! printf '%s' "$OUT$(events "$TMP")" | grep -q 's3cr3t-tok' && ok "token redacted" || fail "token leaked"
+printf '%s' "$OUT$(events "$TMP")" | grep -q '\*\*\*' && ok "rejection output exercises redaction" || fail "rejection did not contain the redacted fixture token"
 ! printf '%s' "$OUT" | grep -q 'someorg@' && ok "username in URL replaced by token" || fail "kept URL username: $OUT"
 rm -rf "$TMP"
 
