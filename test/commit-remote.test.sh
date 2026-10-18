@@ -14,10 +14,11 @@ fail() { echo "  not ok - $*"; FAIL=$((FAIL+1)); }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@localhost GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@localhost
 unset GH_TOKEN TEST_PUSH_TOKEN DATA_DIR
 
-# An agent repo with a change to commit. $1 = extra agent.yaml lines.
+# An agent repo with a change to commit. $1 = extra agent.yaml lines,
+# $2 = its repo line (default `repo: example/test`).
 make_agent() {
   local tmp; tmp=$(mktemp -d -t commit-remote-XXXXXX)
-  printf 'name: T\nrepo: example/test\n%s\n' "$1" > "$tmp/agent.yaml"
+  printf 'name: T\n%s\n%s\n' "${2:-repo: example/test}" "$1" > "$tmp/agent.yaml"
   (cd "$tmp" && git init -q -b main && echo x > f && git add -A && git commit -qm init && echo y > f)
   echo "$tmp"
 }
@@ -39,6 +40,25 @@ OUT=$(bash "$SCRIPTS/commit.sh" "$TMP" "t" 2>&1); RC=$?
 echo "$OUT" | grep -q "GH_TOKEN not set, skipping push" && ok "skips push with the old warning" || fail "unexpected: $OUT"
 [ "$(error_events "$TMP")" = 0 ] && ok "no error event" || fail "logged an error event offline"
 [ "$(cd "$TMP" && git log --oneline | wc -l | tr -d ' ')" = 2 ] && ok "committed locally" || fail "no local commit"
+rm -rf "$TMP"
+
+for REPO_LINE in 'repo: ""' '# no repo key'; do
+  echo "# no repo yet ($REPO_LINE), no token: the same offline skip"
+  TMP=$(make_agent '' "$REPO_LINE")
+  OUT=$(bash "$SCRIPTS/commit.sh" "$TMP" "t" 2>&1); RC=$?
+  [ "$RC" -eq 0 ] && ok "exit 0" || fail "exit $RC"
+  echo "$OUT" | grep -q "GH_TOKEN not set, skipping push" && ok "skips push with the old warning" || fail "unexpected: $OUT"
+  [ "$(error_events "$TMP")" = 0 ] && ok "no error event" || fail "logged an error event offline: $(events "$TMP")"
+  [ "$(cd "$TMP" && git log --oneline | wc -l | tr -d ' ')" = 2 ] && ok "committed locally" || fail "no local commit"
+  rm -rf "$TMP"
+done
+
+echo "# no repo, token set: nowhere to push, logged"
+TMP=$(make_agent '' 'repo: ""')
+OUT=$(GH_TOKEN=t0k-unused bash "$SCRIPTS/commit.sh" "$TMP" "t" 2>&1); RC=$?
+[ "$RC" -eq 0 ] && ok "exit 0 (cycle not failed)" || fail "exit $RC"
+[ "$(error_events "$TMP")" = 1 ] && ok "one error event" || fail "error events: $(events "$TMP")"
+events "$TMP" | grep -q 'agent.yaml sets neither git-remote nor repo' && ok "event names the missing setting" || fail "events: $(events "$TMP")"
 rm -rf "$TMP"
 
 echo "# git-remote to a local bare repo: pushes there"

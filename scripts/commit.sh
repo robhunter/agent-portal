@@ -64,16 +64,16 @@ TOKEN="${!TOKEN_ENV:-}"
 
 if [ -n "${AGENT_GIT_REMOTE:-}" ]; then
   REMOTE="$AGENT_GIT_REMOTE"
-elif [ -n "${AGENT_REPO:-}" ]; then
-  REMOTE="https://github.com/${AGENT_REPO}.git"
+else
   # Unchanged default behaviour: no token means an offline agent (or a test),
-  # not a misconfiguration, so it stays a plain warning.
+  # not a misconfiguration, so it stays a plain warning, whether or not
+  # agent.yaml names a repo (starter-agent's template ships `repo: ""`).
   if [ -z "$TOKEN" ]; then
     echo "Warning: $TOKEN_ENV not set, skipping push"
     exit 0
   fi
-else
-  push_failed "agent.yaml sets neither git-remote nor repo"
+  [ -n "${AGENT_REPO:-}" ] || push_failed "agent.yaml sets neither git-remote nor repo"
+  REMOTE="https://github.com/${AGENT_REPO}.git"
 fi
 
 case "$REMOTE" in
