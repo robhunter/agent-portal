@@ -25,7 +25,22 @@ printf '%s\n' "$@" > "$STUB_DIR/args"
 cat > "$STUB_DIR/stdin"
 echo "progress line" >&2
 [ -n "${STUB_ERR:-}" ] && echo "$STUB_ERR" >&2
-echo "final message"
+JSON=0
+FINAL=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --json) JSON=1 ;;
+    -o|--output-last-message) shift; FINAL="$1" ;;
+  esac
+  shift
+done
+[ -n "$FINAL" ] && printf '%s\n' "final message" > "$FINAL"
+if [ "$JSON" -eq 1 ]; then
+  DEFAULT_EVENTS='{"type":"turn.completed"}'
+  printf '%s\n' "${STUB_EVENTS-$DEFAULT_EVENTS}"
+else
+  echo "final message"
+fi
 exit "${STUB_RC:-0}"
 STUB
 chmod +x "$TMP/codex"
@@ -61,12 +76,44 @@ grep -q "mcp_servers.remote" "$TMP/args" && fail "non-stdio server translated" |
 rm -f "$AGENT/.mcp.json"
 
 echo "# failures"
-STUB_RC=0 STUB_ERR="ERROR: usage limit reached" run && RC=0 || RC=$?
+STUB_RC=0 STUB_ERR="ERROR: usage limit reached" STUB_EVENTS='{"type":"turn.failed","error":{"message":"usage limit reached"}}' run && RC=0 || RC=$?
 [ "$RC" -eq 1 ] && ok "swallowed error turns exit 0 into 1" || fail "exit $RC"
 STUB_RC=0 STUB_ERR="note: rate limits look fine" run && RC=0 || RC=$?
 [ "$RC" -eq 0 ] && ok "benign text does not trip the detector" || fail "exit $RC"
 STUB_RC=7 run && RC=0 || RC=$?
 [ "$RC" -eq 7 ] && ok "codex's own exit code passes through" || fail "exit $RC"
+
+echo "# lifecycle events, independent of transcript text"
+STUB_RC=0 STUB_ERR='The previous run reported usage limit reached; it recovered.' run && RC=0 || RC=$?
+[ "$RC" -eq 0 ] && ok "quoted historical error is not a failure" || fail "exit $RC"
+STUB_RC=0 STUB_ERR='ERROR: usage limit reached' STUB_EVENTS='{"type":"item.completed","item":{"type":"command_execution","aggregated_output":"ERROR: usage limit reached","exit_code":1}}
+{"type":"item.completed","item":{"type":"agent_message","text":"The source contains stream disconnected and unexpected error occurred"}}
+{"type":"turn.completed"}' run && RC=0 || RC=$?
+[ "$RC" -eq 0 ] && ok "completed turn survives error phrases in tool output and agent messages" || fail "exit $RC"
+[ "$(cat "$TMP/out")" = "final message" ] && ok "event stream does not leak to final-message stdout" || fail "stdout: $(cat "$TMP/out")"
+grep -qx -- '--json' "$TMP/args" && ok "requests structured lifecycle events" || fail "missing --json"
+STUB_RC=0 STUB_EVENTS='{"type":"error","message":"stream disconnected; reconnecting"}
+{"type":"turn.completed"}' run && RC=0 || RC=$?
+[ "$RC" -eq 0 ] && ok "recovered error followed by completion succeeds" || fail "exit $RC"
+STUB_RC=0 STUB_EVENTS='{"type":"turn.failed","error":{"message":"request rejected"}}' run && RC=0 || RC=$?
+[ "$RC" -eq 1 ] && ok "failed turn is detected without a known error phrase" || fail "exit $RC"
+STUB_RC=0 STUB_EVENTS='{"type":"turn.completed"}
+{"type":"turn.failed","error":{"message":"request rejected"}}' run && RC=0 || RC=$?
+[ "$RC" -eq 1 ] && ok "later failure overrides earlier completion" || fail "exit $RC"
+STUB_RC=0 STUB_EVENTS='{"type":"turn.completed"}
+{"type":"error","message":"connection lost"}' run && RC=0 || RC=$?
+[ "$RC" -eq 1 ] && ok "unrecovered error after completion fails" || fail "exit $RC"
+STUB_RC=0 STUB_EVENTS='{"type":"turn.completed"}
+{"type":"turn.started"}' run && RC=0 || RC=$?
+[ "$RC" -eq 1 ] && ok "unfinished later turn fails" || fail "exit $RC"
+STUB_RC=0 STUB_EVENTS='{"type":"turn.started"}
+{"type":"item.completed","item":{"type":"agent_message","text":"done"}}' run && RC=0 || RC=$?
+[ "$RC" -eq 1 ] && ok "truncated stream without completion fails" || fail "exit $RC"
+STUB_RC=0 STUB_EVENTS='' run && RC=0 || RC=$?
+[ "$RC" -eq 1 ] && ok "empty event stream fails" || fail "exit $RC"
+STUB_RC=0 STUB_EVENTS='not json
+{"type":"turn.completed"}' run && RC=0 || RC=$?
+[ "$RC" -eq 1 ] && ok "malformed event stream fails" || fail "exit $RC"
 rm "$TMP/home/auth.json"
 STUB_RC=0 run && RC=0 || RC=$?
 [ "$RC" -eq 2 ] && grep -q "codex login --device-auth" "$TMP/err" && ok "missing login exits 2 with instructions" || fail "exit $RC"
