@@ -16,6 +16,7 @@
 set -uo pipefail
 
 AGENT_DIR="$(pwd)"
+FRAMEWORK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CODEX_BIN="${CODEX_BIN:-codex}"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 
@@ -37,6 +38,7 @@ fi
 # Reasoning effort defaults low; `high` is the analogue of claude's --effort max.
 CODEX_ARGS=(
   exec
+  --json
   --dangerously-bypass-approvals-and-sandbox
   --skip-git-repo-check
   -C "$AGENT_DIR"
@@ -64,22 +66,21 @@ if [ -f "$AGENT_DIR/.mcp.json" ] && command -v node >/dev/null 2>&1; then
   ' "$AGENT_DIR/.mcp.json" 2>/dev/null)
 fi
 
-ERR_LOG="$(mktemp -t codex-harness.XXXXXX)"
-trap 'rm -f "$ERR_LOG"' EXIT
+RUN_DIR="$(mktemp -d -t codex-harness.XXXXXX)"
+EVENT_LOG="$RUN_DIR/events.jsonl"
+FINAL_MESSAGE="$RUN_DIR/final.txt"
+trap 'rm -rf "$RUN_DIR"' EXIT
 
-# stderr goes through tee (kept for the check below); stdout bypasses the pipe
-# on fd 3 so it stays the clean final message.
-{ "$CODEX_BIN" "${CODEX_ARGS[@]}" "$@" - 2>&1 1>&3 3>&- | tee "$ERR_LOG" >&2; } 3>&1
+# Keep diagnostics and the structured progress stream in the transcript. The
+# final-message file preserves the stdout contract for reply consumers.
+"$CODEX_BIN" "${CODEX_ARGS[@]}" "$@" --output-last-message "$FINAL_MESSAGE" - | tee "$EVENT_LOG" >&2
 RC=${PIPESTATUS[0]}
+[ ! -f "$FINAL_MESSAGE" ] || cat "$FINAL_MESSAGE"
 
-# Codex can end a run on a swallowed error and still exit 0; wake.sh only
-# retries non-zero exits. Kept narrow, matching the fleethd wrappers: a false
-# positive re-runs a healthy cycle.
-if [ "$RC" -eq 0 ] && grep -qiE \
-     "stream (error|disconnected)|rate limit(ed)? exceeded|usage limit reached|context (window )?exceeded|unexpected error occurred" \
-     "$ERR_LOG"; then
-  echo "[codex-harness] detected a swallowed error in codex output — exiting 1 so the caller retries" >&2
-  exit 1
+# Tool output and agent prose can quote any error. Only lifecycle events say
+# whether the turn completed; an error followed by completion was recovered.
+if [ "$RC" -eq 0 ]; then
+  node "$FRAMEWORK_DIR/scripts/codex-result.js" "$EVENT_LOG" || exit 1
 fi
 
 exit "$RC"
