@@ -8,7 +8,6 @@
 # arguments. wake.sh sources the same scripts/npm-install-workspace.sh.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-RESPOND="$SCRIPT_DIR/scripts/respond.sh"
 
 PASS=0
 FAIL=0
@@ -24,6 +23,9 @@ fi
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
+. "$SCRIPT_DIR/test/helpers/offline-framework.sh"
+make_offline_framework "$SCRIPT_DIR" "$TMP/framework"
+RESPOND="$TMP/framework/scripts/respond.sh"
 
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/npm" <<STUB
@@ -67,9 +69,17 @@ git -C "$AGENT" config user.name test
 git -C "$AGENT" add -A
 git -C "$AGENT" commit -qm init
 
-# HOME is the temp dir so respond.sh finds no nvm.sh to source; sourcing it
-# would put the real npm ahead of the stub. GH_TOKEN unset keeps commit.sh offline.
-( cd "$AGENT" && env -u GH_TOKEN HOME="$TMP" PATH="$TMP/bin:$PATH" bash "$RESPOND" "$AGENT" ) >"$TMP/respond.out" 2>&1
+# The staged framework bypasses host NVM so our npm stub stays first on PATH.
+( cd "$AGENT" && PATH="$TMP/bin:$PATH" bash "$RESPOND" "$AGENT" ) >"$TMP/respond.out" 2>&1
+RESPOND_RC=$?
+[ "$RESPOND_RC" -eq 0 ] && ok "respond cycle exits successfully" || bad "respond cycle exits $RESPOND_RC"
+if grep -q '"type":"error"' "$AGENT/logs/events.jsonl"; then
+  bad "offline respond cycle logged an error"
+else
+  ok "offline respond cycle logs no error"
+fi
+grep -q 'GH_TOKEN not set, skipping push' "$TMP/respond.out" \
+  && ok "commit step stays offline" || bad "commit step did not skip push"
 
 calls="$(tr '\n' ';' < "$TMP/npm-calls.log" 2>/dev/null | sed 's/;$//')"
 ran() { tr ';' '\n' <<<"$calls" | grep -qx "$1"; }

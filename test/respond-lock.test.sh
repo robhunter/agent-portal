@@ -13,7 +13,6 @@
 # Run directly or via `npm test` (the test/*.test.sh loop). CI-covered.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-RESPOND="$SCRIPT_DIR/scripts/respond.sh"
 
 PASS=0
 FAIL=0
@@ -35,6 +34,9 @@ cleanup() {
   rm -rf "$TMP"
 }
 trap cleanup EXIT
+. "$SCRIPT_DIR/test/helpers/offline-framework.sh"
+make_offline_framework "$SCRIPT_DIR" "$TMP/framework"
+RESPOND="$TMP/framework/scripts/respond.sh"
 
 LOCK_FILE="$TMP/agent.lock"
 
@@ -79,6 +81,14 @@ mkdir -p "$TMP/logs"
 # Run a full respond cycle. GH_TOKEN unset => commit.sh skips push (offline).
 ( cd "$TMP" && env -u GH_TOKEN bash "$RESPOND" "$TMP" ) >"$TMP/respond.out" 2>&1
 RESPOND_RC=$?
+[ "$RESPOND_RC" -eq 0 ] && ok "respond cycle exits successfully" || bad "respond cycle exits $RESPOND_RC"
+if grep -q '"type":"error"' "$TMP/logs/events.jsonl"; then
+  bad "offline respond cycle logged an error"
+else
+  ok "offline respond cycle logs no error"
+fi
+grep -q 'GH_TOKEN not set, skipping push' "$TMP/respond.out" \
+  && ok "commit step stays offline" || bad "commit step did not skip push"
 
 # Sanity: the lingering child must still be alive when we check the lock — else
 # a "lock free" result would be meaningless (the leak window already closed).
