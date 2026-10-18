@@ -23,6 +23,8 @@ cat > "$TMP/codex" <<'STUB'
 #!/bin/bash
 printf '%s\n' "$@" > "$STUB_DIR/args"
 cat > "$STUB_DIR/stdin"
+printf 'call\n' >> "$STUB_DIR/calls"
+[ -z "${STUB_CYCLE_EVENTS:-}" ] || printf '{"type":"work"}\n' >> "$STUB_CYCLE_EVENTS"
 echo "progress line" >&2
 [ -n "${STUB_ERR:-}" ] && echo "$STUB_ERR" >&2
 JSON=0
@@ -114,6 +116,36 @@ STUB_RC=0 STUB_EVENTS='' run && RC=0 || RC=$?
 STUB_RC=0 STUB_EVENTS='not json
 {"type":"turn.completed"}' run && RC=0 || RC=$?
 [ "$RC" -eq 1 ] && ok "malformed event stream fails" || fail "exit $RC"
+
+echo "# wake retry integration"
+rm "$TMP/calls"
+if (
+  cd "$AGENT"
+  source "$FRAMEWORK_DIR/scripts/cycle-attempt.sh"
+  CYCLE_LOG_DIR="$TMP/cycles"
+  CYCLE_TS="test"
+  AGENT_NAME="test"
+  WAKE_PROMPT_FILE="$TMP/prompt"
+  EVENTS_FILE="$TMP/events.jsonl"
+  JOURNALS_DIR="$TMP/journals"
+  HARNESS_CMD="bash $SCRIPT"
+  HARNESS_EXTRA_FLAGS=""
+  MAX_RETRIES=2
+  mkdir -p "$CYCLE_LOG_DIR" "$JOURNALS_DIR"
+  echo 'the prompt' > "$WAKE_PROMPT_FILE"
+  : > "$EVENTS_FILE"
+  export CODEX_BIN="$TMP/codex" CODEX_HOME="$TMP/home" STUB_DIR="$TMP"
+  export STUB_RC=0 STUB_ERR='The source mentions usage limit reached.'
+  export STUB_CYCLE_EVENTS="$EVENTS_FILE" CYCLE_ATTEMPT_RETRY_DELAY=0
+  run_cycle_attempts
+  [ "$HARNESS_EXIT" -eq 0 ] && [ "$RETRY" -eq 1 ]
+) > "$TMP/retry.log" 2>&1; then
+  ok "wake accepts completed work without retrying quoted error text"
+else
+  fail "wake retried completed work: $(tail -4 "$TMP/retry.log")"
+fi
+[ "$(wc -l < "$TMP/calls")" -eq 1 ] && ok "completed cycle invokes Codex once" || fail "Codex invoked $(wc -l < "$TMP/calls") times"
+
 rm "$TMP/home/auth.json"
 STUB_RC=0 run && RC=0 || RC=$?
 [ "$RC" -eq 2 ] && grep -q "codex login --device-auth" "$TMP/err" && ok "missing login exits 2 with instructions" || fail "exit $RC"
