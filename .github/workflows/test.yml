@@ -31,5 +31,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install pytest mitmproxy
+      - run: pip install pytest mitmproxy numpy
       - run: pytest sandcat/scripts/test_mitmproxy_addon.py -v
+      - name: Memory index timestamp regressions
+        run: python scripts/memory-index-tz-test.py
+      - name: Memory search query regressions
+        run: python scripts/memory-search-fts-test.py

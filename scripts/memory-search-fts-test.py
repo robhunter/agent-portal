@@ -14,10 +14,9 @@ build_fts_query reduces the query to space-joined quoted literal terms so it
 always parses, preserving the previous implicit-AND matching semantics for
 queries that already worked.
 
-Run locally (the memory scripts are not in CI — the python-tests job installs
-only pytest+mitmproxy):
+Run locally or in the python-tests CI job (requires numpy, not fastembed):
 
-    scripts/memory-venv/bin/python scripts/memory-search-fts-test.py
+    python scripts/memory-search-fts-test.py
 
 The build_fts_query tests are pure stdlib; the executes-against-fts5 tests build
 an in-memory FTS5 table. No embedding model is loaded — fastembed is imported

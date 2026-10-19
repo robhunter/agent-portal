@@ -8,10 +8,9 @@ lexicographically-earlier (e.g. "...T07:00:00-07:00" = 14:00Z is later than
 "...T13:00:00+00:00" = 13:00Z, yet "07..." < "13..." as strings), so the
 incremental filter treated it as already-indexed and never embedded it.
 
-Run locally (the memory scripts are not in CI — the python-tests job installs
-only pytest+mitmproxy):
+Run locally or in the python-tests CI job (requires numpy, not fastembed):
 
-    scripts/memory-venv/bin/python scripts/memory-index-tz-test.py
+    python scripts/memory-index-tz-test.py
 
 No embedding model is loaded: memory-index imports without fastembed (that import
 is lazy, inside main()), so these exercise the pure helpers and run instantly.
