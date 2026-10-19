@@ -294,6 +294,15 @@ npm run test:node     # node tests only (test/*.test.js)
 npm run test:shell    # shell tests only (test/*.test.sh)
 ```
 
+The Python CI job also runs the Sandcat tests and the memory helper regressions.
+Run the memory checks locally with Python and NumPy installed; they use SQLite
+in memory and do not load an embedding model:
+
+```bash
+python scripts/memory-index-tz-test.py
+python scripts/memory-search-fts-test.py
+```
+
 ### Visual verification (shot-scraper)
 
 Agents verify UI work by screenshotting it:
