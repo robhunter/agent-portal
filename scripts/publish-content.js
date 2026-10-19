@@ -38,7 +38,7 @@ function readDataDirFromConfig(agentDir) {
   try {
     const c = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     return c.dataDir || '.';
-  } catch { return '.'; }
+  } catch { return process.env.DATA_DIR || '.'; }
 }
 
 function formatErrors(errors) {
@@ -57,7 +57,7 @@ async function main() {
 
   const yamlPath = path.resolve(args.positional[0]);
   const agentDir = args.agentDir ? path.resolve(args.agentDir) : process.cwd();
-  const dataDir = process.env.DATA_DIR || readDataDirFromConfig(agentDir);
+  const dataDir = readDataDirFromConfig(agentDir);
   const dataRoot = path.join(agentDir, dataDir);
   const sourcesPath = path.join(dataRoot, 'config', 'sources.yaml');
   const itemsDir = path.join(dataRoot, 'content', 'items');

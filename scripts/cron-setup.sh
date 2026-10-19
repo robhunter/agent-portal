@@ -15,7 +15,7 @@ cd "$AGENT_DIR"
 eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 
 # Resolve DATA_DIR from portal.config.json (defaults to ".")
-if [ -z "$DATA_DIR" ] && [ -f "$AGENT_DIR/portal.config.json" ]; then
+if [ -f "$AGENT_DIR/portal.config.json" ]; then
   eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR" 2>/dev/null | grep '^export DATA_DIR=')"
 fi
 DATA_DIR="${DATA_DIR:-.}"

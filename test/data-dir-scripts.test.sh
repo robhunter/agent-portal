@@ -55,10 +55,11 @@ bash "$SCRIPTS/log-event.sh" "$TMP" cycle_start "smoke test"
 grep -q "smoke test" "$TMP/data/logs/events.jsonl" && ok "event content recorded under data/" || fail "event content missing"
 rm -rf "$TMP"
 
-echo "## Test 3: DATA_DIR env override beats portal.config.json"
+echo "## Test 3: portal.config.json beats inherited DATA_DIR"
 TMP=$(make_agent legacy)
-DATA_DIR=data bash "$SCRIPTS/log-event.sh" "$TMP" cycle_start "env override"
-[ -f "$TMP/data/logs/events.jsonl" ] && ok "env override redirected to data/" || fail "env override ignored"
+DATA_DIR=data bash "$SCRIPTS/log-event.sh" "$TMP" cycle_start "target config"
+[ -f "$TMP/logs/events.jsonl" ] && ok "target config selects root logs/" || fail "target config ignored"
+[ ! -e "$TMP/data/logs/events.jsonl" ] && ok "no write under inherited data/" || fail "inherited DATA_DIR redirected event"
 rm -rf "$TMP"
 
 echo "## Test 3b: special characters in the summary produce valid JSONL (not corruption)"

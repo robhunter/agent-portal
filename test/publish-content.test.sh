@@ -4,12 +4,8 @@
 # drives publish-content.sh through pass/fail/quarantine scenarios.
 set -e
 
-# The synthetic agent dir below declares dataDir: "data" in its own
-# portal.config.json, and publish-content.sh reads that file only when DATA_DIR
-# is unset. An agent cycle exports DATA_DIR for its own agent, so inheriting it
-# here points the gate at a registry that does not exist. Test 8 sets it back
-# deliberately to cover the override.
-unset DATA_DIR
+# Exercise every scenario with a conflicting calling agent layout.
+export DATA_DIR=caller-data
 
 FRAMEWORK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT="$FRAMEWORK_DIR/scripts/publish-content.sh"
@@ -148,9 +144,15 @@ set -e
 grep -q "sources" /tmp/pc-7.err && ok "stderr mentions sources" || fail "no sources mention in stderr"
 rm -rf "$TMP2"
 
-echo "## Test 8: honors DATA_DIR env override"
-DATA_DIR=data bash "$SCRIPT" "$TMP" "$TMP/draft7-missing.yaml" 2>/tmp/pc-8.err && true
-grep -q "Failed to read draft" /tmp/pc-8.err && ok "DATA_DIR env propagates to the node script" || fail "DATA_DIR not honored"
+echo "## Test 8: target config wins over inherited DATA_DIR"
+draft "$TMP/draft8.yaml" "target-layout" "test-source" "http://127.0.0.1:$PORT/200"
+if DATA_DIR=. bash "$SCRIPT" "$TMP" "$TMP/draft8.yaml" --skip-fetch > /tmp/pc-8.out 2>/tmp/pc-8.err; then
+  ok "conflicting DATA_DIR does not override target config"
+else
+  fail "target layout rejected: $(cat /tmp/pc-8.err)"
+fi
+[ -f "$TMP/data/content/items/target-layout.yaml" ] && ok "target item published under data/" || fail "target item missing"
+[ ! -d "$TMP/content" ] && [ ! -d "$TMP/caller-data" ] && ok "no content written into caller layout" || fail "content escaped target layout"
 
 echo "## Test 9: references[] with a non-approved host passes (no host check on refs)"
 cat > "$TMP/draft-refs.yaml" <<EOF
