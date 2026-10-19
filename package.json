@@ -1,6 +1,6 @@
 {
   "name": "agent-portal",
-  "version": "1.5.41",
+  "version": "1.5.42",
   "description": "Shared web portal for autonomous agents",
   "main": "index.js",
   "bin": {
@@ -20,6 +20,6 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "js-yaml": "^4.2.0"
+    "js-yaml": "^4.3.2"
   }
 }
