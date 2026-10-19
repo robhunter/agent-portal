@@ -18,7 +18,7 @@ YAML_PATH="${2:?Usage: publish-content.sh <agent-dir> <yaml-path> [--dry-run] [-
 shift 2
 
 # Resolve DATA_DIR from portal.config.json (defaults to ".")
-if [ -z "$DATA_DIR" ] && [ -f "$AGENT_DIR/portal.config.json" ]; then
+if [ -f "$AGENT_DIR/portal.config.json" ]; then
   eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR" 2>/dev/null | grep '^export DATA_DIR=')"
 fi
 export DATA_DIR="${DATA_DIR:-.}"

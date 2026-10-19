@@ -165,6 +165,8 @@ Add `data/` to `.gitignore` so cycle writes don't pollute git history. For a loc
 4. Update `CLAUDE.md` and `agent.yaml` path references (the framework doesn't read these — the model does).
 5. Smoke-test a respond cycle to confirm writes land at the new locations.
 
+When a target agent has `portal.config.json`, its `dataDir` (or the default `"."`) takes precedence over an inherited `DATA_DIR`. Shell utilities and the content publisher use the environment only when the target has no config file.
+
 The framework reads `dataDir` from `portal.config.json` and propagates it via three mechanisms:
 - **Node routes** call `dataPath(config, ...)` from `lib/helpers.js`
 - **Shell scripts** source `read-harness-config.sh` (exports `DATA_DIR`)

@@ -424,8 +424,8 @@ rm -rf "$NO_AGENT"
 # A dataDir:"data" agent reads its Health tab from data/logs/health.jsonl
 # (lib/routes/health.js -> dataPath(config,'logs','health.jsonl')). The script
 # must resolve DATA_DIR from portal.config.json and write to the same place,
-# not to the legacy ./logs. DATA_DIR= prefix keeps the test hermetic regardless
-# of the caller's environment.
+# not to the legacy ./logs. A conflicting inherited value must not redirect it.
+# This keeps the test hermetic regardless of the caller's environment.
 echo "## Test 20: dataDir:\"data\" — health.jsonl lands under data/logs, not ./logs"
 DD_AGENT=$(mktemp -d)
 echo '{"dataDir":"data"}' > "$DD_AGENT/portal.config.json"
@@ -437,7 +437,7 @@ endpoints:
     type: http
 EOF
 EXIT=0
-DATA_DIR= "$HEALTH" "$DD_AGENT" >/dev/null 2>&1 || EXIT=$?
+DATA_DIR=caller-data "$HEALTH" "$DD_AGENT" >/dev/null 2>&1 || EXIT=$?
 assert_eq "0" "$EXIT" "exit 0 under dataDir layout"
 if [ -f "$DD_AGENT/data/logs/health.jsonl" ]; then DATA_LOG=yes; else DATA_LOG=no; fi
 assert_eq "yes" "$DATA_LOG" "health.jsonl written under data/logs (DATA_DIR-aware)"

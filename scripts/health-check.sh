@@ -86,7 +86,7 @@ fi
 # while the Health tab reads ./data/logs and shows nothing. Same idiom as the
 # sibling path-writing scripts (log-event.sh, log-journal.sh).
 FRAMEWORK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-if [ -z "$DATA_DIR" ] && [ -f "$AGENT_DIR/portal.config.json" ]; then
+if [ -f "$AGENT_DIR/portal.config.json" ]; then
   eval "$(bash "$FRAMEWORK_DIR/scripts/read-harness-config.sh" "$AGENT_DIR" 2>/dev/null | grep '^export DATA_DIR=')"
 fi
 DATA_DIR="${DATA_DIR:-.}"
