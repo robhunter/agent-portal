@@ -164,6 +164,23 @@ timeout 480 bash "$FRAMEWORK_DIR/scripts/browser-setup.sh" || \
   echo "WARNING: browser setup failed or timed out — visual verification unavailable." >&2
 echo ""
 
+# Step 2e: PyYAML for the system python3.
+#
+# Agents keep memory in YAML and parse it with python3 tools; the framework's
+# consolidate-learnings.py uses it to parse-check what it writes. The base image
+# does not ship it, so an agent that installed it mid-cycle lost it again on the
+# next rebuild. Best-effort: a missing package is a warning, not a dead setup.
+if python3 -c 'import yaml' 2>/dev/null; then
+  echo "--- PyYAML already installed ---"
+else
+  echo "--- Installing PyYAML (python3-yaml) ---"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-yaml >/dev/null 2>&1 || \
+    { apt-get update -qq >/dev/null 2>&1 && \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-yaml >/dev/null 2>&1; } || \
+    echo "WARNING: python3-yaml install failed — python tools that read YAML will not run." >&2
+fi
+echo ""
+
 # Step 3: GitHub CLI
 if ! command -v gh &>/dev/null; then
   echo "--- Installing GitHub CLI ---"
