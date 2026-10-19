@@ -56,6 +56,7 @@ $EXTRA_LINE"
 fi
 
 if [ "$ACTION" = "install" ]; then
+  mkdir -p "$DATA_DIR/logs/cycles"
   printf '%s\n' "$CRON_LINES" > "$AGENT_CRON_FILE"
   chmod 644 "$AGENT_CRON_FILE"
   echo "Installed cron jobs to $AGENT_CRON_FILE"
