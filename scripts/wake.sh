@@ -97,7 +97,7 @@ rm -f "${AGENT_LOCK_FILE}.starting"
 step "lock acquired (PID=$$)"
 
 # Trap to ensure lock is released on any exit (normal, error, signal)
-trap 'flock -u 200 2>/dev/null; exec 200>&- 2>/dev/null; step "lock released via trap"' EXIT
+trap 'flock -u 200 2>/dev/null || true; exec 200>&- 2>/dev/null; step "lock released via trap"' EXIT
 
 # ── BRANCH GUARD ──
 
@@ -194,7 +194,8 @@ if [ "$WORKSPACES_COUNT" -gt 0 ] 2>/dev/null; then
 
     if [ -d "$ws_path/.git" ]; then
       step "pulling workspace $ws_repo"
-      git -C "$ws_path" pull --ff-only 200>&- 2>&1 || step "workspace pull failed for $ws_repo (non-fatal)"
+      python3 "$FRAMEWORK_DIR/scripts/framework-lock.py" "$ws_path" \
+        git -C "$ws_path" pull --ff-only 200>&- 2>&1 || step "workspace pull failed for $ws_repo (non-fatal)"
     else
       step "cloning workspace $ws_repo to $ws_path"
       mkdir -p "$(dirname "$ws_path")"

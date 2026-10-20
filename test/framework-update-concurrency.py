@@ -39,12 +39,11 @@ class FrameworkUpdates(unittest.TestCase):
         self.git(self.author, "config", "user.email", "fixture@example.invalid")
         self.good = self.advance("initial")
         self.git(self.root, "clone", str(self.remote), str(self.framework))
+        subprocess.run([
+            "bash", "-c", '. "$1"; make_offline_framework "$2" "$3"', "fixture",
+            str(REPO / "test/helpers/offline-framework.sh"), str(REPO), str(self.framework),
+        ], check=True, capture_output=True, text=True)
         scripts = self.framework / "scripts"
-        scripts.mkdir()
-        for name in ("framework-update.sh", "framework-lock.py", "start.sh", "read-config.js",
-                     "log-event.sh", "read-harness-config.sh"):
-            shutil.copy(REPO / "scripts" / name, scripts / name)
-        (self.framework / "node_modules").symlink_to(REPO / "node_modules")
         for name in ("cron-setup.sh", "run-hooks.sh"):
             (scripts / name).write_text("exit 0\n")
         self.bin = self.root / "bin"
@@ -69,7 +68,11 @@ if ! mkdir "$TEST_SYNC/active" 2>/dev/null; then
   exit 97
 fi
 trap 'rmdir "$TEST_SYNC/active"' EXIT
-if [ "$TEST_CALLER:$operation" = "first:$TEST_HOLD" ]; then
+count_file="$TEST_SYNC/$TEST_CALLER-$operation-count"
+count=$(cat "$count_file" 2>/dev/null || echo 0)
+count=$((count + 1))
+echo "$count" > "$count_file"
+if [ "$TEST_CALLER:$operation:$count" = "first:$TEST_HOLD:$TEST_HOLD_NTH" ]; then
   touch "$TEST_SYNC/held"
   for attempt in {{1..1000}}; do
     [ -e "$TEST_SYNC/release" ] && break
@@ -80,6 +83,7 @@ fi
 {shlex.quote(GIT)} "$@"
 """)
         self.write_shim("cron", "exit 0\n")
+        self.write_shim("fixture-harness", "cat >/dev/null\nprintf '{\"type\":\"work\"}\\n' >> logs/events.jsonl\n")
 
     def write_shim(self, name, text):
         path = self.bin / name
@@ -103,7 +107,8 @@ fi
         self.names.append(name)
         directory = self.root / name
         directory.mkdir()
-        config = f"name: {name}\n"
+        config = (f"name: {name}\nrepo: example/none\nlock-file: {directory}/cycle.lock\n"
+                  "wake-prompt: fixture\nrespond-prompt: fixture\n")
         if known_good:
             config += f"framework-last-known-good: {known_good}\n"
         (directory / "agent.yaml").write_text(config)
@@ -112,16 +117,18 @@ fi
     def marker(self, agent, suffix):
         return Path("/tmp") / (agent.name + suffix)
 
-    def run_entry(self, caller, agent, hold="pull", start=False):
+    def run_entry(self, caller, agent, hold="pull", start=False, cycle=None):
         env = os.environ.copy()
         env.update(PATH=str(self.bin) + os.pathsep + env["PATH"],
                    HOME=str(self.root / "empty-home"), GH_TOKEN="",
-                   TEST_SYNC=str(self.sync), TEST_CALLER=caller, TEST_HOLD=hold)
-        for key in ("DATA_DIR", "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID"):
+                   TEST_SYNC=str(self.sync), TEST_CALLER=caller, TEST_HOLD=hold,
+                   TEST_HOLD_NTH="2" if cycle == "wake" else "1",
+                   GIT_ALLOW_PROTOCOL="file", GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null")
+        for key in ("DATA_DIR", "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID", "OPEN_ROUTER_KEY"):
             env.pop(key, None)
         args = ["bash", str(self.framework / "scripts" /
-                            ("start.sh" if start else "framework-update.sh"))]
-        if not start:
+                            ((cycle + ".sh") if cycle else ("start.sh" if start else "framework-update.sh")))]
+        if not start and not cycle:
             args.append(str(self.framework))
         args.append(str(agent))
         out = (self.root / (caller + ".out")).open("w+")
@@ -139,10 +146,9 @@ fi
                 os.killpg(proc.pid, signal.SIGKILL)
             proc.wait(timeout=5)
         for name in self.names:
-            for path in (Path("/tmp") / f"agent-{name}-cycle-failed",
-                         Path("/tmp") / f"{name}-portal-commit",
-                         Path("/tmp") / f"{name}-portal.pid"):
-                path.unlink(missing_ok=True)
+            for path in Path("/tmp").glob(f"*{name}*"):
+                if path.is_file():
+                    path.unlink()
 
     def contents(self, path):
         return path.read_text() if path.exists() else ""
@@ -316,6 +322,38 @@ exec {shlex.quote(PYTHON)} "$1" --timeout 0.05 "${{@:2}}"
         self.assertTrue((self.framework / ".git/framework-update.lock").exists())
         (self.sync / "release").touch()
         self.finish(self.run_entry("first", self.agent()), self.good)
+
+    def check_workspace_pull(self, cycle):
+        agent = self.agent()
+        with (agent / "agent.yaml").open("a") as config:
+            config.write(f"workspaces:\n  - repo: fixture/framework\n    path: {self.framework}\n")
+        (agent / "portal.config.json").write_text(json.dumps({
+            "harness": {"type": "mock", "command": "fixture-harness", "extraFlags": ""},
+        }))
+        self.git(agent, "init", "--initial-branch=main")
+        self.git(agent, "config", "user.name", "Fixture")
+        self.git(agent, "config", "user.email", "fixture@example.invalid")
+        self.git(agent, "add", ".")
+        self.git(agent, "commit", "-m", "initial agent")
+        first = self.run_entry("first", agent, cycle=cycle)
+        second = self.coordinate(lambda: self.run_entry("second", self.agent()))
+        self.finish(second, self.good)
+        proc, out, err = first
+        proc.wait(timeout=10)
+        err.seek(0)
+        out.seek(0)
+        self.assertEqual(proc.returncode, 0, err.read() + out.read() +
+                         self.contents(agent / "logs/cycles/wake-steps.log"))
+        self.assertFalse((self.sync / "overlap").exists(), "workspace pull overlapped update")
+        events = [json.loads(line) for line in (agent / "logs/events.jsonl").read_text().splitlines()]
+        self.assertIn("cycle_end", [event["type"] for event in events])
+        self.assertNotIn("error", [event["type"] for event in events])
+
+    def test_respond_workspace_pull_waits_for_update(self):
+        self.check_workspace_pull("respond")
+
+    def test_wake_workspace_pull_waits_for_update(self):
+        self.check_workspace_pull("wake")
 
 
 if __name__ == "__main__":
