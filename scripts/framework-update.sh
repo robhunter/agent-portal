@@ -13,6 +13,19 @@ set -e
 FRAMEWORK_DIR="${1:?Usage: framework-update.sh <framework-dir> <agent-dir>}"
 AGENT_DIR="${2:?Usage: framework-update.sh <framework-dir> <agent-dir>}"
 
+# Keep pull, rollback and commit reporting in one cross-container transaction.
+if [ "${3:-}" != "--locked" ]; then
+  UPDATE_STATUS=0
+  python3 "$FRAMEWORK_DIR/scripts/framework-lock.py" "$FRAMEWORK_DIR" \
+    bash "$0" "$FRAMEWORK_DIR" "$AGENT_DIR" --locked || UPDATE_STATUS=$?
+  if [ "$UPDATE_STATUS" -eq 75 ]; then
+    echo "Warning: framework update lock unavailable (continuing with current version)" >&2
+    echo "FRAMEWORK_COMMIT='$(git -C "$FRAMEWORK_DIR" rev-parse HEAD)'"
+    exit 0
+  fi
+  exit "$UPDATE_STATUS"
+fi
+
 # Read agent config for rollback state
 eval "$(node "$FRAMEWORK_DIR/scripts/read-config.js" "$AGENT_DIR/agent.yaml")"
 
