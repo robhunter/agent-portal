@@ -4,13 +4,14 @@
 make_offline_framework() {
   local source_dir="$1" target_dir="$2"
   mkdir -p "$target_dir/scripts" "$target_dir/host-profile" "$target_dir/host-nvm"
-  cp "$source_dir"/scripts/*.sh "$source_dir"/scripts/*.js "$target_dir/scripts/"
+  cp "$source_dir"/scripts/*.sh "$source_dir"/scripts/*.js "$source_dir"/scripts/framework-lock.py "$target_dir/scripts/"
   ln -s "$source_dir/node_modules" "$target_dir/node_modules"
   node - "$target_dir" <<'JS'
 const fs = require('fs');
 const root = process.argv[2];
 for (const [name, before, after] of [
   ['commit.sh', '/etc/profile.d/sandcat-*.sh', '"$FRAMEWORK_DIR/host-profile"/sandcat-*.sh'],
+  ['wake.sh', '/etc/profile.d/sandcat-*.sh', '"$FRAMEWORK_DIR/host-profile"/sandcat-*.sh'],
   ['respond.sh', '$HOME/.nvm', '$FRAMEWORK_DIR/host-nvm'],
 ]) {
   const file = `${root}/scripts/${name}`;

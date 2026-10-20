@@ -143,7 +143,7 @@ run_rollback() {
   # Real helper scripts the script invokes (skip the heavy memory-venv); node_modules for js-yaml.
   mkdir -p "$fw/scripts"
   local s
-  for s in framework-update.sh read-config.js log-event.sh read-harness-config.sh; do
+  for s in framework-update.sh framework-lock.py read-config.js log-event.sh read-harness-config.sh; do
     cp "$REPO_ROOT/scripts/$s" "$fw/scripts/$s"
   done
   ln -s "$REPO_ROOT/node_modules" "$fw/node_modules"

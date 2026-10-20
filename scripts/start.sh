@@ -96,7 +96,8 @@ fi
 
 # Pull latest framework code
 log "Pulling latest framework..."
-git -C "$FRAMEWORK_DIR" pull --ff-only 2>/dev/null || log "Framework pull failed (non-fatal)"
+python3 "$FRAMEWORK_DIR/scripts/framework-lock.py" "$FRAMEWORK_DIR" \
+  git -C "$FRAMEWORK_DIR" pull --ff-only 2>/dev/null || log "Framework pull failed (non-fatal)"
 
 # Supervise portal server (portal code from framework, config from agent)
 if command -v node >/dev/null 2>&1 && [ -f "$FRAMEWORK_DIR/index.js" ]; then

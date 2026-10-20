@@ -59,7 +59,8 @@ if [ "$WORKSPACES_COUNT" -gt 0 ] 2>/dev/null; then
     ws_repo="${!repo_var}"; ws_path="${!path_var}"; ws_npm="${!npm_var}"
 
     if [ -d "$ws_path/.git" ]; then
-      git -C "$ws_path" pull --ff-only 200>&- 2>/dev/null || echo "Warning: pull failed for $ws_repo"
+      python3 "$FRAMEWORK_DIR/scripts/framework-lock.py" "$ws_path" \
+        git -C "$ws_path" pull --ff-only 200>&- 2>/dev/null || echo "Warning: pull failed for $ws_repo"
     else
       mkdir -p "$(dirname "$ws_path")"
       git clone "https://${GH_TOKEN}@github.com/${ws_repo}.git" "$ws_path" 200>&- 2>/dev/null || {
