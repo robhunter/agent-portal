@@ -86,6 +86,21 @@ supervise() {
   log "Supervisor loop for $name running (subshell PID $!)"
 }
 
+# Trust bind-mounted repos regardless of the owner the mount reports.
+# The agent runs as root, but a host bind mount can report the host user's
+# UID (Docker Desktop's plain virtiofs shows 501 under .git). Git then
+# refuses every command with "detected dubious ownership", and wake.sh dies
+# at its first git call. Docker Desktop's fakeowner mount hides this by
+# reporting root, but not on every Mac and not every time. --system writes
+# the container's /etc/gitconfig, never the host's ~/.gitconfig.
+if command -v git >/dev/null 2>&1; then
+  if ! git config --system --get-all safe.directory 2>/dev/null | grep -qx '\*'; then
+    git config --system --add safe.directory '*' \
+      && log "Added safe.directory '*' to system git config" \
+      || log "Could not set safe.directory — git may refuse bind-mounted repos"
+  fi
+fi
+
 # Install cron jobs and start daemon
 if command -v cron >/dev/null 2>&1; then
   bash "$FRAMEWORK_DIR/scripts/cron-setup.sh" "$AGENT_DIR" install \
