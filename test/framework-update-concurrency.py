@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 import uuid
 
 
@@ -25,6 +26,8 @@ class FrameworkUpdates(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="framework updates ")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.global_config = self.root / "global.gitconfig"
+        self.global_config.write_text("[fixture]\n\tmarker = local global\n")
         self.remote = self.root / "remote.git"
         self.author = self.root / "author"
         self.framework = self.root / "shared"
@@ -117,13 +120,16 @@ fi
     def marker(self, agent, suffix):
         return Path("/tmp") / (agent.name + suffix)
 
-    def run_entry(self, caller, agent, hold="pull", start=False, cycle=None):
+    def run_entry(self, caller, agent, hold="pull", start=False, cycle=None, extra_env=None):
         env = os.environ.copy()
         env.update(PATH=str(self.bin) + os.pathsep + env["PATH"],
                    HOME=str(self.root / "empty-home"), GH_TOKEN="",
                    TEST_SYNC=str(self.sync), TEST_CALLER=caller, TEST_HOLD=hold,
                    TEST_HOLD_NTH="2" if cycle == "wake" else "1",
-                   GIT_ALLOW_PROTOCOL="file", GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null")
+                   GIT_ALLOW_PROTOCOL="file", GIT_CONFIG_NOSYSTEM="1",
+                   GIT_CONFIG_GLOBAL=str(self.global_config),
+                   GIT_CONFIG_SYSTEM=str(self.root / "system.gitconfig"))
+        env.update(extra_env or {})
         for key in ("DATA_DIR", "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID", "OPEN_ROUTER_KEY"):
             env.pop(key, None)
         args = ["bash", str(self.framework / "scripts" /
@@ -307,6 +313,70 @@ exec {shlex.quote(PYTHON)} "$1" --timeout 0.05 "${{@:2}}"
         self.assertIn("Framework pull failed (non-fatal)", self.contents(self.root / "first.out"))
         self.assertEqual(self.git(self.framework, "rev-parse", "HEAD"), self.good)
         self.assertFalse((self.sync / "operations").exists())
+
+    def start_until_ready(self, caller, **kwargs):
+        (self.sync / "release").touch()
+        result = self.run_entry(caller, self.agent(), start=True, **kwargs)
+        self.wait_for(lambda: "Supervisor ready." in self.contents(self.root / (caller + ".out")))
+        self.assertIsNone(result[0].poll(), "startup should keep supervising")
+        os.killpg(result[0].pid, signal.SIGTERM)
+        result[0].wait(timeout=5)
+        return self.contents(self.root / (caller + ".out"))
+
+    def test_startup_trust_is_isolated_and_idempotent(self):
+        caller_system = self.root / "caller-system.gitconfig"
+        caller_global = self.root / "caller-global.gitconfig"
+        caller_system.write_text("[fixture]\n\tmarker = caller system\n")
+        caller_global.write_text("[fixture]\n\tmarker = caller global\n")
+        system = self.root / "system.gitconfig"
+        original = "[fixture]\n\tmarker = preserved\n[safe]\n\tdirectory = /existing/repo\n"
+        system.write_text(original)
+        env = dict(os.environ, GIT_CONFIG_SYSTEM=str(system), GIT_CONFIG_GLOBAL=str(caller_global),
+                   GIT_CONFIG_NOSYSTEM="0", GIT_TEST_ASSUME_DIFFERENT_OWNER="1")
+
+        def ownership_probe():
+            return subprocess.run([GIT, "-C", str(self.framework), "status", "--porcelain"],
+                                  env=env, text=True, capture_output=True)
+
+        before = ownership_probe()
+        self.assertNotEqual(before.returncode, 0)
+        self.assertIn("dubious ownership", before.stderr)
+        with patch.dict(os.environ, GIT_CONFIG_SYSTEM=str(caller_system),
+                        GIT_CONFIG_GLOBAL=str(caller_global)):
+            first = self.start_until_ready("first")
+            self.assertIn("Added safe.directory '*'", first)
+            self.assertEqual(caller_system.read_text(), "[fixture]\n\tmarker = caller system\n")
+            self.assertEqual(caller_global.read_text(), "[fixture]\n\tmarker = caller global\n")
+            self.assertEqual(self.global_config.read_text(), "[fixture]\n\tmarker = local global\n")
+            after_first = system.read_bytes()
+            second = self.start_until_ready("second")
+            self.assertNotIn("Added safe.directory", second)
+            self.assertEqual(system.read_bytes(), after_first)
+        self.assertIn("marker = preserved", system.read_text())
+        trusted = subprocess.run([GIT, "config", "--system", "--get-all", "safe.directory"],
+                                 env=env, text=True, capture_output=True, check=True)
+        self.assertEqual(trusted.stdout.splitlines(), ["/existing/repo", "*"])
+        self.assertEqual(ownership_probe().returncode, 0)
+        self.assertEqual(self.contents(self.sync / "operations"), "first pull\nsecond pull\n")
+
+    def test_startup_trust_precedes_framework_pull(self):
+        caller, agent = "first", self.agent()
+        result = self.run_entry(caller, agent, start=True)
+        self.wait_for(lambda: (self.sync / "held").exists())
+        system = self.root / "system.gitconfig"
+        self.assertIn("directory = *", system.read_text())
+        self.assertNotIn("Supervisor ready.", self.contents(self.root / "first.out"))
+        (self.sync / "release").touch()
+        self.wait_for(lambda: "Supervisor ready." in self.contents(self.root / "first.out"))
+        self.assertIsNone(result[0].poll())
+
+    def test_startup_trust_write_failure_is_nonfatal(self):
+        blocked = self.root / "unwritable-system-config"
+        blocked.mkdir()
+        stdout = self.start_until_ready("first", extra_env={"GIT_CONFIG_SYSTEM": str(blocked)})
+        self.assertIn("Could not set safe.directory", stdout)
+        self.assertEqual(self.contents(self.sync / "operations"), "first pull\n")
+        self.assertEqual(list(blocked.iterdir()), [])
 
     def test_terminated_lock_holder_releases_lock(self):
         ready = self.root / "holder-ready"
