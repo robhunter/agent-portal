@@ -36,6 +36,9 @@ fi
 # user namespaces, which Docker Desktop's VM does not grant; the container and
 # Sandcat's network boundary are the isolation, as for claude-code.
 # Reasoning effort defaults low; `high` is the analogue of claude's --effort max.
+# Web search matches claude-code's default tools. `codex exec` rejects the
+# interactive --search flag, so set the config key; charged per call on API-key
+# billing, included with a ChatGPT plan.
 CODEX_ARGS=(
   exec
   --json
@@ -43,6 +46,7 @@ CODEX_ARGS=(
   --skip-git-repo-check
   -C "$AGENT_DIR"
   -c model_reasoning_effort="high"
+  -c tools.web_search=true
 )
 
 # MCP servers: Claude Code reads the agent's .mcp.json; Codex reads only

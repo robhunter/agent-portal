@@ -61,6 +61,7 @@ grep -q "progress line" "$TMP/err" && ok "progress goes to stderr" || fail "stde
 [ "$(head -1 "$TMP/args")" = "exec" ] && ok "runs codex exec" || fail "args: $(tr '\n' ' ' < "$TMP/args")"
 grep -qx -- "--dangerously-bypass-approvals-and-sandbox" "$TMP/args" && ok "sandbox bypass flag" || fail "missing bypass flag"
 grep -qx -- 'model_reasoning_effort=high' "$TMP/args" && ok "high reasoning effort" || fail "missing effort"
+grep -qx -- 'tools.web_search=true' "$TMP/args" && ok "web search enabled" || fail "missing web search"
 grep -qx -- "$AGENT" "$TMP/args" && ok "-C points at the agent dir" || fail "agent dir not passed"
 [ "$(tail -1 "$TMP/args")" = "-" ] && ok "reads the prompt from stdin (-)" || fail "last arg: $(tail -1 "$TMP/args")"
 grep -qx -- "gpt-test" "$TMP/args" && ok "extra flags passed through" || fail "extra flags missing"
