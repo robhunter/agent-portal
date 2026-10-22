@@ -37,3 +37,5 @@ jobs:
         run: python scripts/memory-index-tz-test.py
       - name: Memory search query regressions
         run: python scripts/memory-search-fts-test.py
+      - name: Memory search integration
+        run: python scripts/memory-search-integration-test.py
