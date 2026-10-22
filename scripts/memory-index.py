@@ -63,7 +63,7 @@ def parse_ts(s: str) -> datetime:
 
     Fail-safe: empty or unparseable timestamps return datetime.min (UTC) so they
     sort oldest and get (re-)indexed rather than silently dropped; the is_duplicate
-    check prevents re-embedding genuine duplicates.
+    check prevents storing genuine duplicates again.
     """
     if not s:
         return datetime.min.replace(tzinfo=timezone.utc)
@@ -80,12 +80,18 @@ def select_new_entries(entries: list[dict], last_ts: str) -> tuple[list[dict], s
     """Select entries newer than the watermark and compute the next watermark.
 
     Returns (new_entries, new_watermark). "Newer" is decided chronologically via
-    parse_ts, never by string comparison (see parse_ts for why). The watermark is
-    the original ISO string of the chronologically-latest new entry, or last_ts
+    parse_ts, never by string comparison (see parse_ts for why). Entries without
+    a usable timestamp are always reconsidered for duplicate checking. The
+    watermark is the original ISO string of the chronologically-latest new entry, or last_ts
     unchanged when nothing is newer.
     """
     last_dt = parse_ts(last_ts)
-    new = [e for e in entries if parse_ts(e["timestamp"]) > last_dt]
+    floor = datetime.min.replace(tzinfo=timezone.utc)
+    new = []
+    for entry in entries:
+        entry_dt = parse_ts(entry["timestamp"])
+        if entry_dt == floor or entry_dt > last_dt:
+            new.append(entry)
 
     watermark, watermark_dt = last_ts, last_dt
     for e in new:
@@ -187,9 +193,12 @@ def parse_events(events_path: Path) -> list[dict]:
         except json.JSONDecodeError:
             continue
         if event.get("type") in include_types and event.get("summary"):
+            timestamp = event.get("ts", "")
+            if not isinstance(timestamp, str):
+                timestamp = ""
             entries.append({
                 "source": "event",
-                "timestamp": event.get("ts", ""),
+                "timestamp": timestamp,
                 "author": None,
                 "tag": event.get("type"),
                 "content": event["summary"],

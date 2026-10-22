@@ -17,7 +17,13 @@ is lazy, inside main()), so these exercise the pure helpers and run instantly.
 """
 
 import importlib.util
+import json
+import os
+import sqlite3
+import subprocess
 import sys
+import tempfile
+import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -69,8 +75,7 @@ def test_parse_ts_failsafe(mod):
     assert mod.parse_ts("") == floor
     assert mod.parse_ts("not-a-timestamp") == floor
     assert mod.parse_ts(None) == floor
-    # Fail-safe entries sort oldest, so they are treated as new (re-indexed),
-    # never silently dropped.
+    # Selection must explicitly reconsider the fallback value, which sorts oldest.
     assert mod.parse_ts("garbage") < mod.parse_ts("2026-01-01T00:00:00+00:00")
     print("✓ parse_ts is fail-safe (empty/garbage/None -> oldest, never dropped)")
 
@@ -114,6 +119,100 @@ def test_select_new_entries_first_run_and_empty(mod):
     print("✓ select_new_entries handles the first run and the no-new-entries case")
 
 
+def test_select_new_entries_unusable_timestamps(mod):
+    undated = [{"timestamp": ts} for ts in ("", "not-a-timestamp", "2026-02-30T12:00:00Z")]
+    for watermark in ("", "bad-watermark", "2026-10-22T18:00:00Z"):
+        selected, next_wm = mod.select_new_entries(undated, watermark)
+        assert selected == undated, f"undated entries disappeared at {watermark!r}: {selected}"
+        assert next_wm == watermark, "undated entries must not advance the watermark"
+
+    dated = [
+        {"timestamp": "2026-10-22T17:00:00Z"},
+        {"timestamp": "2026-10-22T11:00:00-07:00"},  # equals the watermark
+        {"timestamp": "2026-10-22T12:00:00-07:00"},
+    ]
+    selected, next_wm = mod.select_new_entries(dated + undated, "2026-10-22T18:00:00Z")
+    assert selected == dated[2:] + undated, f"wrong mixed selection: {selected}"
+    assert next_wm == dated[2]["timestamp"], "watermark must track the newest valid entry"
+    print("✓ undated entries survive initial and incremental selection without moving watermarks")
+
+
+def test_cli_undated_entries():
+    script = Path(__file__).with_name("memory-index.py")
+    with tempfile.TemporaryDirectory(prefix="memory-undated-test-") as tmp:
+        root = Path(tmp)
+        (root / "journals").mkdir()
+        (root / "logs").mkdir()
+        model_dir = root / "model"
+        model_dir.mkdir()
+        (model_dir / "fastembed.py").write_text(textwrap.dedent("""\
+            import hashlib
+            import numpy as np
+
+            class TextEmbedding:
+                def __init__(self, **kwargs):
+                    pass
+
+                def embed(self, texts):
+                    for text in texts:
+                        seed = int.from_bytes(hashlib.sha256(text.encode()).digest()[:8], 'big')
+                        yield np.random.default_rng(seed).standard_normal(384)
+            """))
+        env = {**os.environ, "PYTHONPATH": str(model_dir), "DATA_DIR": "."}
+        journal = root / "journals" / "2026-10.md"
+        events = root / "logs" / "events.jsonl"
+        timestamp = "2026-10-22T18:00:00Z"
+        journal.write_text(f"### {timestamp} | agent | cycle\n\nDated journal entry.\n")
+        events.write_text(json.dumps({"ts": timestamp, "type": "work", "summary": "Dated event."}) + "\n")
+
+        def run(*args):
+            result = subprocess.run([sys.executable, str(script), str(root), *args],
+                                    env=env, capture_output=True, text=True, timeout=30)
+            assert result.returncode == 0, result.stdout + result.stderr
+            return result.stdout
+
+        def snapshot():
+            with sqlite3.connect(root / "memory" / "memory.db") as db:
+                rows = db.execute("SELECT source, timestamp, content FROM entries ORDER BY id").fetchall()
+                watermarks = dict(db.execute("SELECT key, value FROM index_state"))
+            return rows, watermarks
+
+        run()
+        before, watermarks = snapshot()
+        assert len(before) == 2
+        assert watermarks == {"journal_last_ts": timestamp, "event_last_ts": timestamp}
+        with journal.open("a") as f:
+            f.write("\n### invalid-date | agent | observation\n\nUndated journal entry.\n")
+        undated_events = [
+            {"type": "work", "summary": "Event with an omitted timestamp."},
+            {"ts": "", "type": "error", "summary": "Event with a blank timestamp."},
+            {"ts": "invalid-date", "type": "dissonance", "summary": "Event with a malformed timestamp."},
+        ]
+        undated_events.extend(
+            {"ts": value, "type": "work", "summary": f"Event with a {type(value).__name__} timestamp."}
+            for value in (None, 1720000000, {"value": "date"}, ["date"], True)
+        )
+        with events.open("a") as f:
+            for event in undated_events:
+                f.write(json.dumps(event) + "\n")
+
+        run()
+        indexed, after_watermarks = snapshot()
+        assert len(indexed) == len(undated_events) + 3, f"CLI dropped undated entries: {indexed}"
+        assert indexed[:2] == before
+        assert {row[2] for row in indexed[2:]} == {
+            "Undated journal entry.", *(event["summary"] for event in undated_events)}
+        assert {row[1] for row in indexed[2:]} == {"", "invalid-date"}
+        assert after_watermarks == watermarks, "undated inputs changed a valid watermark"
+
+        for args in ((), ("--reindex",)):
+            output = run(*args)
+            assert "Indexed: 0" in output, output
+            assert snapshot() == (indexed, watermarks), "repeat/reindex changed stored entries or watermarks"
+
+    print("✓ real CLI retains undated journal/events and deduplicates repeats and --reindex")
+
+
 def main():
     mod = load_module()
     test_lazy_import(mod)
@@ -123,6 +222,8 @@ def main():
     test_parse_ts_failsafe(mod)
     test_select_new_entries_watermark_trap(mod)
     test_select_new_entries_first_run_and_empty(mod)
+    test_select_new_entries_unusable_timestamps(mod)
+    test_cli_undated_entries()
     print("\n✅ All tz regression tests passed!")
 
 
