@@ -120,7 +120,7 @@ EXISTING_INSIGHTS=""
 # Write prompt to temp file using heredoc to avoid shell escaping issues
 PROMPT_FILE=$(mktemp)
 CONSOLIDATION_TS=$(date -Iseconds)
-trap "rm -f $PROMPT_FILE" EXIT
+trap 'rm -f "$PROMPT_FILE" "${INSIGHTS_TMP:-}"' EXIT
 
 cat > "$PROMPT_FILE" <<PROMPT_EOF
 You are consolidating memory for an autonomous software engineering agent. Your job is to distill operational patterns and key learnings from recent work into structured YAML files.
@@ -216,6 +216,12 @@ BLOCK2=$(echo "$RESULT" | awk '
   capture && block==2 {print}
 ')
 
+# Validate before changing either memory file so failed output remains retryable.
+INSIGHTS_YAML=$(printf '%s\n' "$BLOCK2" | node "$FRAMEWORK_DIR/scripts/consolidate-insights.js") || {
+  echo "Error: consolidation output rejected; memory files and watermark left unchanged." >&2
+  exit 1
+}
+
 # Find the next ID for operational.yaml
 NEXT_ID=1
 if [ -f "$OPERATIONAL_FILE" ]; then
@@ -249,31 +255,14 @@ else
   echo "No new operational learnings identified."
 fi
 
-# Write consolidated-insights.yaml from second block
-# Strip comment lines and unwrap if nested under a top-level key
-INSIGHTS_YAML=$(echo "$BLOCK2" | grep -v '^#.*\.yaml$')
-# If the LLM wrapped everything under "consolidated-insights:", unwrap it
-if echo "$INSIGHTS_YAML" | head -1 | grep -q '^consolidated-insights:'; then
-  INSIGHTS_YAML=$(echo "$INSIGHTS_YAML" | tail -n +2 | sed 's/^  //')
+# Replace the validated insights atomically in their existing directory.
+INSIGHTS_TMP=$(mktemp "${INSIGHTS_FILE}.tmp.XXXXXX")
+printf '%s\n' "$INSIGHTS_YAML" > "$INSIGHTS_TMP"
+if [ -f "$INSIGHTS_FILE" ]; then
+  chmod --reference="$INSIGHTS_FILE" "$INSIGHTS_TMP"
 fi
-
-if [ -n "$INSIGHTS_YAML" ]; then
-  echo "Updating consolidated-insights.yaml..."
-  echo "$INSIGHTS_YAML" > "$INSIGHTS_FILE"
-  echo "Updated consolidated-insights.yaml"
-else
-  # Minimal update — at least record the consolidation timestamp
-  cat > "$INSIGHTS_FILE" <<EOF
-last_consolidated: "$(date -Iseconds)"
-summary: |
-  Consolidation ran but could not parse structured output from LLM.
-recurring_themes: []
-key_decisions: []
-active_patterns: []
-stale_learnings: []
-EOF
-  echo "Wrote minimal consolidated-insights.yaml (could not parse LLM output)"
-fi
+mv "$INSIGHTS_TMP" "$INSIGHTS_FILE"
+echo "Updated consolidated-insights.yaml"
 
 # ── LOG ──
 
