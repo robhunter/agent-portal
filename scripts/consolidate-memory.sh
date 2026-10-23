@@ -57,10 +57,11 @@ fi
 # chronologically (consolidate-filter.py) — a lexicographic ISO compare miscounts
 # across a UTC-offset / DST change, the same root cause as #247 F2 (memory-index.py).
 if [ -n "$LAST_CONSOLIDATION_TS" ]; then
-  CYCLES_SINCE=$(grep '"type":"cycle_start"' "$EVENTS_FILE" 2>/dev/null | \
+  CYCLES_SINCE=$(grep -E '"type"[[:space:]]*:[[:space:]]*"cycle_start"' "$EVENTS_FILE" 2>/dev/null | \
     python3 "$FRAMEWORK_DIR/scripts/consolidate-filter.py" count-after "$LAST_CONSOLIDATION_TS")
 else
-  CYCLES_SINCE=$(grep -c '"type":"cycle_start"' "$EVENTS_FILE" 2>/dev/null || echo 0)
+  CYCLES_SINCE=$(grep -Ec '"type"[[:space:]]*:[[:space:]]*"cycle_start"' "$EVENTS_FILE" 2>/dev/null || true)
+  CYCLES_SINCE="${CYCLES_SINCE:-0}"
 fi
 
 if [ "$FORCE" != "--force" ] && [ "$CYCLES_SINCE" -lt "$CYCLE_THRESHOLD" ]; then
@@ -90,10 +91,10 @@ done
 EVENTS_CONTENT=""
 if [ -n "$LAST_CONSOLIDATION_TS" ]; then
   # Events newer than last consolidation (chronological compare, #247 F3)
-  EVENTS_CONTENT=$(grep -E '"type":"(work|error|dissonance)"' "$EVENTS_FILE" 2>/dev/null | \
+  EVENTS_CONTENT=$(grep -E '"type"[[:space:]]*:[[:space:]]*"(work|error|dissonance)"' "$EVENTS_FILE" 2>/dev/null | \
     python3 "$FRAMEWORK_DIR/scripts/consolidate-filter.py" after "$LAST_CONSOLIDATION_TS" || true)
 else
-  EVENTS_CONTENT=$(grep -E '"type":"(work|error|dissonance)"' "$EVENTS_FILE" 2>/dev/null || true)
+  EVENTS_CONTENT=$(grep -E '"type"[[:space:]]*:[[:space:]]*"(work|error|dissonance)"' "$EVENTS_FILE" 2>/dev/null || true)
 fi
 
 # Check if there's new data to consolidate
