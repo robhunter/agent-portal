@@ -21,6 +21,10 @@ try {
       new Date(`${timestamp.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) !== timestamp.slice(0, 10)) {
     throw new Error('last_consolidated must be an ISO timestamp with a timezone');
   }
+  const expectedTimestamp = process.argv[2];
+  if (!expectedTimestamp || Date.parse(timestamp) !== Date.parse(expectedTimestamp)) {
+    throw new Error('last_consolidated must match the requested processing timestamp');
+  }
   if (typeof insights.summary !== 'string' || !insights.summary.trim()) {
     throw new Error('summary must be nonempty text');
   }

@@ -45,6 +45,9 @@ summary: "Fixture consolidation"
 YAML
 ''')
         stub.chmod(0o755)
+        clock = bin_dir / "date"
+        clock.write_text("#!/bin/sh\nif [ \"$1\" = -Iseconds ]; then echo 2026-06-15T18:00:00Z; else exec /bin/date \"$@\"; fi\n")
+        clock.chmod(0o755)
         self.env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}",
                         DATA_DIR="data", CAPTURE_PROMPT=str(self.prompt),
                         CAPTURE_CALLS=str(self.calls))

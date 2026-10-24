@@ -63,6 +63,9 @@ echo called >> "$CAPTURE_CALLS"
 cat "$MODEL_RESPONSE"
 ''')
         stub.chmod(0o755)
+        self.clock = clock = bin_dir / "date"
+        clock.write_text("#!/bin/sh\nif [ \"$1\" = -Iseconds ]; then echo 2026-06-16T15:00:00Z; else exec /bin/date \"$@\"; fi\n")
+        clock.chmod(0o755)
         self.env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}",
                         DATA_DIR="wrong-inherited-directory", CAPTURE_PROMPT=str(self.prompt),
                         CAPTURE_CALLS=str(self.calls), MODEL_RESPONSE=str(self.response))
@@ -110,6 +113,56 @@ cat "$MODEL_RESPONSE"
         self.assertEqual(self.calls.read_text(), 'called\ncalled\n')
         self.assertFalse((self.agent / 'wrong-inherited-directory').exists())
         self.assertEqual(list(self.data.rglob('*.tmp.*')), [])
+
+    def test_model_cannot_move_the_processing_boundary(self):
+        for timestamp in ('2099-01-01T00:00:00Z', '2026-06-16T15:00:01Z',
+                          '2026-06-16T14:59:59Z'):
+            with self.subTest(timestamp=timestamp):
+                self.reject(LEARNING + '```yaml\n' + VALID.replace(
+                    '2026-06-16T15:00:00Z', timestamp) + '```\n')
+
+    def test_wrong_watermark_retry_keeps_input_and_later_work(self):
+        before_prompt = self.reject(LEARNING + '```yaml\n' + VALID.replace(
+            '2026-06-16T15:00:00Z', '2099-01-01T00:00:00Z') + '```\n')
+        result = self.run_script(LEARNING + '```yaml\n' + VALID + '```\n')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.prompt.read_text(), before_prompt)
+        self.assertIn('Work awaiting consolidation', before_prompt)
+        self.assertIn('Journal awaiting consolidation', before_prompt)
+        self.assertIn('2026-06-16T15:00:00Z', self.insights.read_text())
+        with self.events.open('a') as stream:
+            for event in [
+                {'ts': '2026-06-16T15:01:00Z', 'type': 'cycle_start', 'summary': 'next wake'},
+                {'ts': '2026-06-16T15:01:01Z', 'type': 'work', 'summary': 'Later work must remain eligible'},
+            ]:
+                stream.write(json.dumps(event) + '\n')
+        self.clock.write_text('#!/bin/sh\nif [ "$1" = -Iseconds ]; then echo 2026-06-16T15:02:00Z; else exec /bin/date "$@"; fi\n')
+        result = self.run_script(LEARNING + '```yaml\n' + VALID.replace(
+            '2026-06-16T15:00:00Z', '2026-06-16T15:02:00Z') + '```\n')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        recent_events = self.prompt.read_text().split('## Input: Recent Events\n', 1)[1].split(
+            '\n## Existing operational.yaml', 1)[0]
+        self.assertIn('Later work must remain eligible', recent_events)
+        self.assertNotIn('Work awaiting consolidation', recent_events)
+        self.assertEqual(self.calls.read_text(), 'called\ncalled\ncalled\n')
+        repeat = self.run_script('must not be called')
+        self.assertEqual(repeat.returncode, 0, repeat.stdout + repeat.stderr)
+        self.assertIn('Consolidation not needed: 0 cycles', repeat.stdout)
+        self.assertEqual(self.calls.read_text(), 'called\ncalled\ncalled\n')
+
+    def test_first_run_wrong_watermark_creates_no_memory(self):
+        self.insights.unlink()
+        self.operational.unlink()
+        self.reject(LEARNING + '```yaml\n' + VALID.replace(
+            '2026-06-16T15:00:00Z', '2099-01-01T00:00:00Z') + '```\n')
+        self.assertFalse(self.insights.exists())
+        self.assertFalse(self.operational.exists())
+
+    def test_equivalent_timezone_watermark_is_accepted(self):
+        result = self.run_script(LEARNING + '```yaml\n' + VALID.replace(
+            '2026-06-16T15:00:00Z', '2026-06-16T08:00:00-07:00') + '```\n')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('2026-06-16T08:00:00-07:00', self.insights.read_text())
 
     def test_plain_text_and_empty_response_are_rejected(self):
         for response in ('', 'The model returned an explanation instead of YAML.\n'):

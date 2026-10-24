@@ -152,7 +152,7 @@ printf '### 2026-10-06T10:30:00+00:00 | coder | cycle\nmerged a PR\n' > "$AGENT/
 REAL_DATE=$(command -v date)
 cat > "$TMP/bin/date" <<EOF
 #!/bin/bash
-if [ "\$*" = "+%Y-%m-%d" ]; then echo 2026-10-06; else exec "$REAL_DATE" "\$@"; fi
+if [ "\$*" = "+%Y-%m-%d" ]; then echo 2026-10-06; elif [ "\$*" = "-Iseconds" ]; then echo 2026-10-06T11:00:00+00:00; else exec "$REAL_DATE" "\$@"; fi
 EOF
 chmod +x "$TMP/bin/date"
 cat > "$TMP/bin/claude" <<'EOF'
