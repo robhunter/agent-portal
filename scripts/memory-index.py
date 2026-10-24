@@ -197,7 +197,12 @@ def parse_events(events_path: Path) -> list[dict]:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if event.get("type") in include_types and event.get("summary"):
+        if not isinstance(event, dict):
+            continue
+        event_type = event.get("type")
+        summary = event.get("summary")
+        if (isinstance(event_type, str) and event_type in include_types
+                and isinstance(summary, str) and summary):
             timestamp = event.get("ts", "")
             if not isinstance(timestamp, str):
                 timestamp = ""
@@ -205,8 +210,8 @@ def parse_events(events_path: Path) -> list[dict]:
                 "source": "event",
                 "timestamp": timestamp,
                 "author": None,
-                "tag": event.get("type"),
-                "content": event["summary"],
+                "tag": event_type,
+                "content": summary,
             })
 
     return entries
