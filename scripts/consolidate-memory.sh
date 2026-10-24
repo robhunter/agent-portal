@@ -217,7 +217,7 @@ BLOCK2=$(echo "$RESULT" | awk '
 ')
 
 # Validate before changing either memory file so failed output remains retryable.
-INSIGHTS_YAML=$(printf '%s\n' "$BLOCK2" | node "$FRAMEWORK_DIR/scripts/consolidate-insights.js") || {
+INSIGHTS_YAML=$(printf '%s\n' "$BLOCK2" | node "$FRAMEWORK_DIR/scripts/consolidate-insights.js" "$CONSOLIDATION_TS") || {
   echo "Error: consolidation output rejected; memory files and watermark left unchanged." >&2
   exit 1
 }
