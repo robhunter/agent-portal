@@ -300,8 +300,17 @@ in memory and do not load an embedding model:
 
 ```bash
 python scripts/memory-index-tz-test.py
+python scripts/memory-index-record-test.py
 python scripts/memory-search-fts-test.py
 ```
+
+Memory indexing retains each distinct source record, including similar entries
+and repeated text at different timestamps. Only an exact match of source,
+timestamp, author, tag and complete text is skipped. Existing databases receive
+one automatic full scan to recover records previously omitted by semantic
+deduplication; saved rows and embeddings are preserved. `--reindex` can repeat
+this scan without duplicating or re-embedding records already stored. Recovery
+requires the original journals and event log to remain available.
 
 ### Visual verification (shot-scraper)
 

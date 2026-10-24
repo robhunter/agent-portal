@@ -106,7 +106,7 @@ def test_indexing_and_search():
             emb_np = np.array(emb, dtype=np.float32)
             emb_bytes = idx_mod.serialize_vec(emb_np.tolist())
 
-            if not idx_mod.is_duplicate(conn, emb_np):
+            if not idx_mod.is_duplicate(conn, entry):
                 cursor = conn.execute(
                     "INSERT INTO entries (source, timestamp, author, tag, content, embedding) VALUES (?, ?, ?, ?, ?, ?)",
                     (entry["source"], entry["timestamp"], entry.get("author"),
@@ -115,8 +115,8 @@ def test_indexing_and_search():
                 indexed += 1
 
         conn.commit()
-        assert indexed >= 8, f"Expected at least 8 indexed entries, got {indexed}"
-        print(f"✓ Indexed {indexed} entries (some duplicates expected)")
+        assert indexed == 10, f"Expected all 10 source records, got {indexed}"
+        print(f"✓ Indexed {indexed} source records")
 
         # Test 2: Search for Railway deployment
         results = search_mod.search(db_path, "Railway deployment", model)
@@ -140,11 +140,10 @@ def test_indexing_and_search():
             assert "rec_score" in r, "Results should include recency score"
         print(f"✓ Results include recency scores")
 
-        # Test 5: Deduplication — re-indexing similar content should be skipped
+        # Test 5: Re-indexing the same source record should be skipped
         import numpy as np
-        test_emb = np.array(embeddings[0], dtype=np.float32)
-        is_dup = idx_mod.is_duplicate(conn, test_emb)
-        assert is_dup, "Expected duplicate detection for identical embedding"
+        is_dup = idx_mod.is_duplicate(conn, all_entries[0])
+        assert is_dup, "Expected duplicate detection for identical source record"
         print(f"✓ Deduplication correctly identifies duplicate entries")
 
         # Test 6: Incremental indexing

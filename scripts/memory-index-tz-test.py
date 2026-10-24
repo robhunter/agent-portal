@@ -180,7 +180,7 @@ def test_cli_undated_entries():
         run()
         before, watermarks = snapshot()
         assert len(before) == 2
-        assert watermarks == {"journal_last_ts": timestamp, "event_last_ts": timestamp}
+        assert watermarks == {"journal_last_ts": timestamp, "event_last_ts": timestamp, "record_policy": "exact-source-record-v1"}
         with journal.open("a") as f:
             f.write("\n### invalid-date | agent | observation\n\nUndated journal entry.\n")
         undated_events = [
