@@ -93,7 +93,7 @@ def test_select_new_entries_watermark_trap(mod):
     watermark = "2026-06-15T13:00:00+00:00"
     new, next_wm = mod.select_new_entries(entries, watermark)
     new_ts = [e["timestamp"] for e in new]
-    assert new_ts == ["2026-06-15T07:00:00-07:00", "2026-06-15T08:00:00-07:00"], \
+    assert new_ts == ["2026-06-15T13:00:00+00:00", "2026-06-15T07:00:00-07:00", "2026-06-15T08:00:00-07:00"], \
         f"cross-offset entries were dropped: {new_ts}"
     assert next_wm == "2026-06-15T08:00:00-07:00", f"watermark advanced wrong: {next_wm}"
 
@@ -112,9 +112,9 @@ def test_select_new_entries_first_run_and_empty(mod):
     new, wm = mod.select_new_entries(entries, "")
     assert len(new) == 2, f"first run should index all, got {len(new)}"
     assert wm == "2026-06-15T07:00:00-07:00", f"first-run watermark wrong: {wm}"
-    # Re-run at that watermark: nothing newer, watermark unchanged.
+    # Reconsider the boundary for exact-record checking; progress stays unchanged.
     new2, wm2 = mod.select_new_entries(entries, wm)
-    assert new2 == [], f"re-run should find nothing new, got {new2}"
+    assert new2 == entries[1:], f"re-run should reconsider the boundary, got {new2}"
     assert wm2 == wm, f"watermark should not move, got {wm2}"
     print("✓ select_new_entries handles the first run and the no-new-entries case")
 
@@ -132,7 +132,7 @@ def test_select_new_entries_unusable_timestamps(mod):
         {"timestamp": "2026-10-22T12:00:00-07:00"},
     ]
     selected, next_wm = mod.select_new_entries(dated + undated, "2026-10-22T18:00:00Z")
-    assert selected == dated[2:] + undated, f"wrong mixed selection: {selected}"
+    assert selected == dated[1:] + undated, f"wrong mixed selection: {selected}"
     assert next_wm == dated[2]["timestamp"], "watermark must track the newest valid entry"
     print("✓ undated entries survive initial and incremental selection without moving watermarks")
 
