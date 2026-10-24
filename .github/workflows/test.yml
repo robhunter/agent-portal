@@ -41,6 +41,8 @@ jobs:
         run: python scripts/memory-index-boundary-test.py
       - name: Memory index malformed event records
         run: python scripts/memory-index-events-test.py
+      - name: Memory index multi-batch catch-up and retry
+        run: python scripts/memory-index-batch-test.py
       - name: Memory search query regressions
         run: python scripts/memory-search-fts-test.py
       - name: Memory search integration
