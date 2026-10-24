@@ -221,6 +221,10 @@ INSIGHTS_YAML=$(printf '%s\n' "$BLOCK2" | node "$FRAMEWORK_DIR/scripts/consolida
   echo "Error: consolidation output rejected; memory files and watermark left unchanged." >&2
   exit 1
 }
+LEARNINGS_TO_ADD=$(printf '%s\n' "$BLOCK1" | node "$FRAMEWORK_DIR/scripts/consolidate-observations.js") || {
+  echo "Error: consolidation output rejected; memory files and watermark left unchanged." >&2
+  exit 1
+}
 
 # Find the next ID for operational.yaml
 NEXT_ID=1
@@ -229,28 +233,17 @@ if [ -f "$OPERATIONAL_FILE" ]; then
   [ -n "$MAX_ID" ] && NEXT_ID=$((MAX_ID + 1))
 fi
 
-# Extract new learnings from first block and append to operational.yaml
-LEARNINGS_TO_ADD=$(echo "$BLOCK1" | awk '
-  /new_learnings:\s*\[\]/{exit}
-  /new_learnings:/{found=1; next}
-  found && /observation:/{
-    gsub(/^[[:space:]]*-[[:space:]]*observation:[[:space:]]*"?/, "")
-    gsub(/"[[:space:]]*$/, "")
-    if (length($0) > 0) print
-  }
-')
-
 TODAY=$(date +%Y-%m-%d)
-if [ -n "$LEARNINGS_TO_ADD" ]; then
+if [ "$LEARNINGS_TO_ADD" != '[]' ]; then
   echo "Adding new operational learnings..."
   # Inserted at the end of the learnings: list, not appended to the file, and parse-checked
   # with PyYAML when the memory venv has it (agent-portal#310). On failure the file is left
-  # as it was and the learnings are printed, so the rest of the consolidation still runs.
+  # as it was and the learnings are printed. Leave the watermark retryable on failure.
   MEMORY_PYTHON="$FRAMEWORK_DIR/scripts/memory-venv/bin/python"
   [ -x "$MEMORY_PYTHON" ] || MEMORY_PYTHON=python3
   printf '%s\n' "$LEARNINGS_TO_ADD" \
-    | "$MEMORY_PYTHON" "$FRAMEWORK_DIR/scripts/consolidate-learnings.py" "$OPERATIONAL_FILE" "$NEXT_ID" "$TODAY" \
-    || echo "Warning: no learnings were added to operational.yaml (see above)."
+    | "$MEMORY_PYTHON" "$FRAMEWORK_DIR/scripts/consolidate-learnings.py" "$OPERATIONAL_FILE" "$NEXT_ID" "$TODAY" --json \
+    || { echo "Error: operational learnings were not saved; insights and watermark left unchanged." >&2; exit 1; }
 else
   echo "No new operational learnings identified."
 fi

@@ -161,8 +161,8 @@ cat >/dev/null
 cat <<'OUT'
 ```yaml
 new_learnings:
-  - observation: "split on \s+ before matching"
-  - observation: "say "hi" twice"
+  - observation: 'split on \s+ before matching'
+  - observation: 'say "hi" twice'
 ```
 ```yaml
 last_consolidated: "2026-10-06T11:00:00+00:00"

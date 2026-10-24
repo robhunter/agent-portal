@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Add new learnings to an agent's memory/operational.yaml (agent-portal#310).
 
-Usage: consolidate-learnings.py <operational.yaml> <first-id> <added-date> < learnings.txt
-  One learning per line on stdin; blank lines are skipped.
+Usage: consolidate-learnings.py <operational.yaml> <first-id> <added-date> [--json] < learnings.txt
+  One learning per line, or a JSON string array with --json.
 
 consolidate-memory.sh used to append each entry to the end of the file with a
 two-space indent. That only works when `learnings:` is the file's last key and its
@@ -106,11 +106,21 @@ def problem_with(text, new_ids):
 
 
 def main():
-    if len(sys.argv) != 4:
-        print("usage: consolidate-learnings.py <operational.yaml> <first-id> <added-date> < learnings.txt", file=sys.stderr)
+    if len(sys.argv) not in (4, 5) or (len(sys.argv) == 5 and sys.argv[4] != "--json"):
+        print("usage: consolidate-learnings.py <operational.yaml> <first-id> <added-date> [--json] < learnings.txt", file=sys.stderr)
         return 2
     path, first_id, added = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-    observations = [line.rstrip("\n") for line in sys.stdin if line.strip()]
+    if len(sys.argv) == 5:
+        try:
+            observations = json.load(sys.stdin)
+            if not isinstance(observations, list) or any(
+                    not isinstance(item, str) or not item.strip() for item in observations):
+                raise ValueError("expected an array of nonempty observation strings")
+        except (ValueError, TypeError) as error:
+            print(f"Invalid learning input: {error}", file=sys.stderr)
+            return 1
+    else:
+        observations = [line.rstrip("\n") for line in sys.stdin if line.strip()]
     if not observations:
         print("No new operational learnings to add.")
         return 0

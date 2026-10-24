@@ -214,5 +214,92 @@ cat "$MODEL_RESPONSE"
         self.assertFalse(self.operational.exists())
 
 
+    def test_invalid_learning_blocks_preserve_state_and_retry_input(self):
+        initial = self.snapshot()
+        for body in ('new_learnings: [unterminated', 'unrelated: []',
+                     'new_learnings: null', 'new_learnings: text',
+                     'new_learnings: [null]', 'new_learnings: [42]',
+                     'new_learnings: [{observation: ""}]',
+                     'new_learnings: [{observation: "   "}]',
+                     'new_learnings: [{observation: 42}]',
+                     'new_learnings: [{observation: valid}, {observation: null}]',
+                     'new_learnings: [{other: text}]'):
+            with self.subTest(body=body):
+                for path in self.data.rglob('*'):
+                    if path.is_file():
+                        path.unlink()
+                for name, content in initial.items():
+                    path = self.data / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(content)
+                before = self.snapshot()
+                result = self.run_script('```yaml\n' + body + '\n```\n```yaml\n' + VALID + '```\n')
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn('Invalid consolidation learnings:', result.stderr)
+                self.assertEqual(self.snapshot(), before)
+                rejected_prompt = self.prompt.read_text()
+                retry = self.run_script(LEARNING + '```yaml\n' + VALID + '```\n')
+                self.assertEqual(retry.returncode, 0, retry.stdout + retry.stderr)
+                self.assertEqual(self.prompt.read_text(), rejected_prompt)
+
+    def test_yaml_observations_preserve_the_complete_text(self):
+        observations = ['Keep both lines.\nPreserve the second line too.',
+                        'Keep "quotes" and \\s+ intact']
+        bodies = ['new_learnings:\n  - observation: |-\n      Keep both lines.\n      Preserve the second line too.\n'
+                  '  - observation: \'Keep "quotes" and \\s+ intact\'\n',
+                  json.dumps({'new_learnings': [{'observation': text} for text in observations]})]
+        original = self.operational.read_bytes()
+        original_insights = self.insights.read_bytes()
+        for body in bodies:
+            with self.subTest(body=body):
+                self.operational.write_bytes(original)
+                self.insights.write_bytes(original_insights)
+                result = self.run_script('```yaml\n' + body + '\n```\n```yaml\n' + VALID + '```\n', force=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                loaded = subprocess.run(['node', '-e',
+                    'const fs=require("fs"), yaml=require("js-yaml"); '
+                    'console.log(JSON.stringify(yaml.load(fs.readFileSync(process.argv[1],"utf8"))))',
+                    str(self.operational)], cwd=FRAMEWORK, text=True, capture_output=True, check=True)
+                saved = json.loads(loaded.stdout)['learnings']
+                self.assertEqual([item['observation'] for item in saved[1:]], observations)
+                self.assertEqual([item['id'] for item in saved], [1, 2, 3])
+
+    def test_failed_learning_write_keeps_watermark_and_retry_input(self):
+        before = {p: p.read_bytes() for p in (self.insights, self.events, self.journal)}
+        stub = self.root / 'bin/claude'
+        original_stub = stub.read_text()
+        original_operational = self.operational.read_bytes()
+        stub.write_text(original_stub.replace('cat "$MODEL_RESPONSE"',
+            'rm "$FAIL_LEARNING_PATH"\nmkdir "$FAIL_LEARNING_PATH"\ncat "$MODEL_RESPONSE"'))
+        self.env['FAIL_LEARNING_PATH'] = str(self.operational)
+        result = self.run_script(LEARNING + '```yaml\n' + VALID + '```\n')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('operational learnings were not saved', result.stderr)
+        self.assertEqual({p: p.read_bytes() for p in before}, before)
+        self.assertNotIn('Memory consolidation complete.', result.stdout)
+        rejected_prompt = self.prompt.read_text()
+        self.operational.rmdir()
+        self.operational.write_bytes(original_operational)
+        stub.write_text(original_stub)
+        retry = self.run_script(LEARNING + '```yaml\n' + VALID + '```\n')
+        self.assertEqual(retry.returncode, 0, retry.stdout + retry.stderr)
+        self.assertEqual(self.prompt.read_text(), rejected_prompt)
+
+    def test_first_run_invalid_learnings_create_no_memory(self):
+        self.insights.unlink()
+        self.operational.unlink()
+        before = self.snapshot()
+        result = self.run_script('```yaml\nnew_learnings: broken\n```\n```yaml\n' + VALID + '```\n')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_empty_learning_list_is_a_valid_success(self):
+        before = self.operational.read_bytes()
+        result = self.run_script('```yaml\nnew_learnings: []\n```\n```yaml\n' + VALID + '```\n')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.operational.read_bytes(), before)
+        self.assertIn('New consolidated context', self.insights.read_text())
+
+
 unittest.main(verbosity=2)
 PY
