@@ -6,7 +6,7 @@ Usage: memory-venv/bin/python scripts/memory-index.py /path/to/agent-dir [--data
 Parses journal markdown files and events.jsonl, generates embeddings via
 fastembed (BAAI/bge-small-en-v1.5), and stores in SQLite with FTS5 for
 keyword search and numpy-based vector similarity. Incremental: only
-indexes new entries since last run (timestamps are compared chronologically,
+indexes entries at or after the last run's watermark (timestamps are compared chronologically,
 parsed to UTC — see parse_ts).
 
 --data-dir defaults to "." (legacy layout — journals/, logs/, memory/ at
@@ -78,11 +78,14 @@ def parse_ts(s: str) -> datetime:
 
 
 def select_new_entries(entries: list[dict], last_ts: str) -> tuple[list[dict], str]:
-    """Select entries newer than the watermark and compute the next watermark.
+    """Select entries at or after the watermark and compute the next watermark.
 
-    Returns (new_entries, new_watermark). "Newer" is decided chronologically via
+    Returns (new_entries, new_watermark). The boundary is decided chronologically via
     parse_ts, never by string comparison (see parse_ts for why). Entries without
-    a usable timestamp are always reconsidered for duplicate checking. The
+    a usable timestamp are always reconsidered for duplicate checking. Entries
+    at the watermark are reconsidered too: another record can be appended at
+    that same instant after the previous pass. Exact-record checks skip saved
+    entries without embedding them again. The
     watermark is the original ISO string of the chronologically-latest new entry, or last_ts
     unchanged when nothing is newer.
     """
@@ -91,7 +94,7 @@ def select_new_entries(entries: list[dict], last_ts: str) -> tuple[list[dict], s
     new = []
     for entry in entries:
         entry_dt = parse_ts(entry["timestamp"])
-        if entry_dt == floor or entry_dt > last_dt:
+        if entry_dt == floor or entry_dt >= last_dt:
             new.append(entry)
 
     watermark, watermark_dt = last_ts, last_dt
