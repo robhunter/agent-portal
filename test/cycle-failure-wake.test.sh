@@ -101,7 +101,9 @@ fs.writeFileSync(file, JSON.stringify(state));
 JS
       cp "$state" "$agent/state-before"
       export FIXTURE_NOTIFY_EXIT=7
-      bash "$TASK_TMP/framework/scripts/wake.sh" "$agent" > "$agent/wake.out" 2>&1
+      status=0
+      bash "$TASK_TMP/framework/scripts/wake.sh" "$agent" > "$agent/wake.out" 2>&1 || status=$?
+      check test "$status" = 0
       check cmp -s "$state" "$agent/state-before"
       check grep -Fq 'cycle failure alert skipped or failed (non-fatal)' "$agent/$data/logs/cycles/wake-steps.log"
       check test "$(grep -c '^text=' "$FIXTURE_CALLS")" = 2
