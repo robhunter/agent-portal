@@ -92,7 +92,7 @@ docker run -d --name "$AGENT_NAME" --restart unless-stopped \
 # ── Install system packages ──────────────────────────────────────────────
 echo "Installing system packages..."
 docker exec "$AGENT_NAME" bash -c \
-    "apt-get update -qq && apt-get install -y -qq curl jq git cron ca-certificates > /dev/null 2>&1"
+    "apt-get update -qq && apt-get install -y -qq curl jq git cron ca-certificates libatomic1 > /dev/null 2>&1"
 
 # ── Clone agent-portal framework ─────────────────────────────────────────
 echo "Cloning agent-portal framework..."

@@ -353,7 +353,7 @@ echo ""
 echo "Installing system packages..."
 run_setup_step "Installing system packages" \
     "DEBIAN_FRONTEND=noninteractive apt-get update -qq && \
-     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq git cron ca-certificates > /dev/null 2>&1 && \
+     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq git cron ca-certificates libatomic1 > /dev/null 2>&1 && \
      update-ca-certificates 2>/dev/null"
 
 echo "Setting container timezone to $AGENT_TIMEZONE..."
