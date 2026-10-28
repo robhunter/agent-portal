@@ -18,9 +18,11 @@ if (source.split(old).length !== 2) throw new Error('Missing fixture NVM boundar
 fs.writeFileSync(file, source.replace(old, process.argv[3]));
 JS
 printf 'echo "FRAMEWORK_COMMIT=fixture"\n' > "$TASK_TMP/framework/scripts/framework-update.sh"
-for script in run-hooks.sh consolidate-memory.sh; do
-  printf 'exit 0\n' > "$TASK_TMP/framework/scripts/$script"
-done
+printf 'exit 0\n' > "$TASK_TMP/framework/scripts/consolidate-memory.sh"
+cat > "$TASK_TMP/framework/scripts/run-hooks.sh" <<'SH'
+if [ "$3" = post-cycle ] && [ "${FIXTURE_POST_FAIL:-0}" = 1 ]; then exit 9; fi
+exit 0
+SH
 mkdir -p "$TASK_TMP/bin"
 cat > "$TASK_TMP/bin/curl" <<'SH'
 #!/bin/bash
@@ -109,6 +111,15 @@ JS
     bash "$TASK_TMP/framework/scripts/wake.sh" "$agent" > "$agent/wake.out" 2>&1
     check test "$(grep -c '^text=' "$FIXTURE_CALLS")" = "$alert_calls"
     FIXTURE_MODE=success
+    if [ "$layout" = legacy ]; then
+      export FIXTURE_POST_FAIL=1
+      status=0
+      bash "$TASK_TMP/framework/scripts/wake.sh" "$agent" > "$agent/wake.out" 2>&1 || status=$?
+      check test "$status" = 9
+      check test -s "$state"
+      check test "$(grep -c '^text=' "$FIXTURE_CALLS")" = "$alert_calls"
+      unset FIXTURE_POST_FAIL
+    fi
     bash "$TASK_TMP/framework/scripts/wake.sh" "$agent" > "$agent/wake.out" 2>&1
     check grep -Fq "$name is running again" "$FIXTURE_CALLS"
     check test "$(grep -c '^text=' "$FIXTURE_CALLS")" = "$((alert_calls+1))"
