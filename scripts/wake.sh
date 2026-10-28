@@ -392,6 +392,10 @@ if [ "$HARNESS_EXIT" -ne 0 ]; then
     "Harness exited with code $HARNESS_EXIT after $RETRY attempt(s)"
 fi
 
+node "$FRAMEWORK_DIR/scripts/cycle-failure-alert.js" \
+  "$AGENT_DIR" "$DATA_DIR" "$AGENT_NAME" "$CYCLE_LOG" "$HARNESS_EXIT" || \
+  step "cycle failure alert skipped or failed (non-fatal)"
+
 # Run post-cycle hooks
 bash "$FRAMEWORK_DIR/scripts/run-hooks.sh" "$FRAMEWORK_DIR" "$AGENT_DIR" post-cycle
 step "post-cycle hooks done"
