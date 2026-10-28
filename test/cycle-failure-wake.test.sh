@@ -88,15 +88,33 @@ JS
     check grep -Fq "$name: 3 consecutive scheduled cycles failed." "$FIXTURE_CALLS"
     check grep -Fq 'Failed to authenticate: OAuth session expired and could not be refreshed' "$FIXTURE_CALLS"
     check test "$(grep -c '^text=' "$FIXTURE_CALLS")" = 1
+    alert_calls=1
+    if [ "$layout" = legacy ]; then
+      node - "$state" <<'JS'
+const fs = require('fs');
+const file = process.argv[2];
+const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+state.notifiedAt = '2020-01-01T00:00:00Z';
+fs.writeFileSync(file, JSON.stringify(state));
+JS
+      cp "$state" "$agent/state-before"
+      export FIXTURE_NOTIFY_EXIT=7
+      bash "$TASK_TMP/framework/scripts/wake.sh" "$agent" > "$agent/wake.out" 2>&1
+      check cmp -s "$state" "$agent/state-before"
+      check grep -Fq 'cycle failure alert skipped or failed (non-fatal)' "$agent/$data/logs/cycles/wake-steps.log"
+      check test "$(grep -c '^text=' "$FIXTURE_CALLS")" = 2
+      export FIXTURE_NOTIFY_EXIT=0
+      alert_calls=3
+    fi
     bash "$TASK_TMP/framework/scripts/wake.sh" "$agent" > "$agent/wake.out" 2>&1
-    check test "$(grep -c '^text=' "$FIXTURE_CALLS")" = 1
+    check test "$(grep -c '^text=' "$FIXTURE_CALLS")" = "$alert_calls"
     FIXTURE_MODE=success
     bash "$TASK_TMP/framework/scripts/wake.sh" "$agent" > "$agent/wake.out" 2>&1
     check grep -Fq "$name is running again" "$FIXTURE_CALLS"
-    check test "$(grep -c '^text=' "$FIXTURE_CALLS")" = 2
+    check test "$(grep -c '^text=' "$FIXTURE_CALLS")" = "$((alert_calls+1))"
     check test ! -e "$state"
     bash "$TASK_TMP/framework/scripts/wake.sh" "$agent" > "$agent/wake.out" 2>&1
-    check test "$(grep -c '^text=' "$FIXTURE_CALLS")" = 2
+    check test "$(grep -c '^text=' "$FIXTURE_CALLS")" = "$((alert_calls+1))"
   fi
   if [ "$data" != . ]; then
     check test ! -e "$agent/logs/cycle-failure-alert.json"

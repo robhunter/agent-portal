@@ -35,7 +35,7 @@ function notifyCycleFailures({ agentDir, dataDir, agentName, cycleLog, exitCode,
   let state = null;
   try {
     const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-    if (saved && typeof saved.firstFailure === 'string' && Number.isFinite(Date.parse(saved.notifiedAt))) state = saved;
+    if (saved && typeof saved.firstFailure === 'string' && typeof saved.notifiedAt === 'string' && Number.isFinite(Date.parse(saved.notifiedAt))) state = saved;
   } catch (error) {
     if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
   }
