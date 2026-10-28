@@ -106,6 +106,19 @@ git -C /root/workspaces/agent-portal pull --ff-only
 
 Then restart the portal process (kill the old PID or restart the container). If you added the `git pull` to `start.sh` as shown above, updates happen automatically on every container restart.
 
+## Scheduled failure alerts
+
+With `TELEGRAM_TOKEN` and `TELEGRAM_CHAT_ID` configured, three consecutive failed
+scheduled harness cycles trigger a Telegram alert naming the agent, the first
+failure time, and the first line of the final attempt's transcript. Continued
+failures send at most one reminder every 24 hours. The first completed successful
+cycle sends one recovery message.
+
+Only alerted agents receive a `logs/cycle-failure-alert.json` file under their
+configured data directory; recovery removes it. Healthy agents and agents without
+Telegram configuration create no alert state. Notification failures are nonfatal
+and remain eligible for retry.
+
 ## Configuration
 
 Each agent has a `portal.config.json` with these fields:

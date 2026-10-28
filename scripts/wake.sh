@@ -387,9 +387,16 @@ fi
 # Return to agent dir in case the harness changed directories
 cd "$AGENT_DIR"
 
+notify_cycle_status() {
+  node "$FRAMEWORK_DIR/scripts/cycle-failure-alert.js" \
+    "$AGENT_DIR" "$DATA_DIR" "$AGENT_NAME" "$CYCLE_LOG" "$HARNESS_EXIT" || \
+    step "cycle failure alert skipped or failed (non-fatal)"
+}
+
 if [ "$HARNESS_EXIT" -ne 0 ]; then
   bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" error \
     "Harness exited with code $HARNESS_EXIT after $RETRY attempt(s)"
+  notify_cycle_status
 fi
 
 # Run post-cycle hooks
@@ -419,6 +426,10 @@ CYCLE_DURATION_S=$((CYCLE_END_EPOCH - CYCLE_START_EPOCH))
 CYCLE_DURATION_M=$((CYCLE_DURATION_S / 60))
 echo "{\"ts\":\"$(date -Iseconds)\",\"type\":\"cycle_end\",\"summary\":\"Cycle complete\",\"duration_s\":${CYCLE_DURATION_S},\"duration_m\":${CYCLE_DURATION_M}}" >> "$AGENT_DIR/$DATA_DIR/logs/events.jsonl"
 step "cycle complete (${CYCLE_DURATION_M}m ${CYCLE_DURATION_S}s)"
+
+if [ "$HARNESS_EXIT" -eq 0 ]; then
+  notify_cycle_status
+fi
 
 # Cycle succeeded — remove failure marker and update framework last-known-good
 rm -f "$CYCLE_FAILED_MARKER"
