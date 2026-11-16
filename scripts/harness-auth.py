@@ -1,26 +1,5 @@
 #!/usr/bin/env python3
-"""
-harness-auth.py — remember when a harness's login stopped working.
-
-A credentials file that exists is not a login that works: on 2026-11-16 Codex
-answered every run with `401 … token_revoked` while ~/.codex/auth.json sat
-untouched, so every portal kept saying "authenticated". This records what the
-harness actually reported, and the portal reads it.
-
-  scan [--strict] <data-dir> <cycle-log>...
-                                   record auth failures found in a cycle's logs.
-                                   wake.sh uses --strict for a cycle that
-                                   succeeded: only Codex's own timestamped
-                                   `ERROR codex…` log lines count there, which
-                                   a review quoting these messages cannot
-                                   produce. A failed cycle is scanned in full.
-  status <data-dir> <harness>      JSON: {"failed": bool, "at": ..., "error": ...}
-  selftest
-
-A recorded failure clears itself once that harness's credentials file is
-written after it — a new login, or any successful token refresh. State lives
-in <data-dir>/state/harness-auth.json.
-"""
+"""Record harness login failures seen in cycle logs, and report whether one still stands."""
 import datetime
 import json
 import os
@@ -28,10 +7,12 @@ import re
 import sys
 import tempfile
 
-# Codex logs its own auth errors as `<ts>Z ERROR codex_<module>: … 401 …`, and
-# does so even in a run that still succeeds on a not-yet-expired access token —
-# on 2026-11-16 that line appeared at 09:42, 45 minutes before the first failed
-# review. A successful cycle is scanned for this shape only.
+USAGE = """usage:
+  harness-auth.py scan [--strict] <data-dir> <cycle-log>...   record failures; --strict matches only Codex's own error lines
+  harness-auth.py status <data-dir> <harness>                 JSON: {"failed": bool, "at": ..., "error": ...}
+  harness-auth.py selftest"""
+
+# Codex's own timestamped auth-error log line, which quoted text in a review cannot produce.
 STRICT = {
     "codex": re.compile(r"^\S+Z\s+ERROR codex\S*:.*(token_revoked|invalidated oauth token)", re.I),
 }
@@ -112,14 +93,14 @@ def scan(data_dir, logs, now=None, strict=False):
 
 
 def current(entry, harness, cred_mtime=None):
-    """Is this recorded failure still in force?"""
+    """True until the credentials file is written after the failure."""
     if not entry or "failedAt" not in entry:
         return False
     if cred_mtime is None:
         try:
             cred_mtime = os.path.getmtime(credentials_path(harness))
         except (OSError, TypeError):
-            return True        # nothing to compare against: keep reporting it
+            return True
     return cred_mtime <= entry["failedAt"]
 
 
@@ -140,23 +121,23 @@ def selftest():
                              "token was revoked. Please log out and sign in again.")) == {"codex"}; ok += 1
     assert set(find_failures('API Error: 401 {"type":"error","error":{"type":"authentication_error",'
                              '"message":"OAuth token has expired."}}')) == {"claude-code"}; ok += 1
-    assert find_failures("curl: HTTP 401 from dev.azure.com") == {}; ok += 1      # other 401s don't count
+    assert find_failures("curl: HTTP 401 from dev.azure.com") == {}; ok += 1
     assert find_failures("all good") == {}; ok += 1
     codex_log = ("2026-11-16T17:42:33.245078Z ERROR codex_models_manager::manager: failed to refresh "
                  "available models: unexpected status 401 Unauthorized: Encountered invalidated oauth token")
     assert set(find_failures(codex_log, strict=True)) == {"codex"}; ok += 1
-    assert find_failures("    assert 'token_revoked' in reply  # a reviewed test", strict=True) == {}; ok += 1
+    assert find_failures("    assert 'token_revoked' in reply", strict=True) == {}; ok += 1
     assert find_failures('API Error: 401 {"type":"authentication_error"}', strict=True) == {}; ok += 1
 
     d = tempfile.mkdtemp()
     log = os.path.join(d, "cycle.log")
     with open(log, "w") as fh:
         fh.write("[review-wrapper] running codex\n" + codex_401 + "\n")
-    assert scan(d, [log], now=1000.0) == {"codex": codex_401}; ok += 1      # newly failed
-    assert scan(d, [log], now=1060.0) == {}; ok += 1                        # already known: not "new"
+    assert scan(d, [log], now=1000.0) == {"codex": codex_401}; ok += 1
+    assert scan(d, [log], now=1060.0) == {}; ok += 1
     entry = load(d)["codex"]
-    assert current(entry, "codex", cred_mtime=900.0); ok += 1               # login older than failure
-    assert not current(entry, "codex", cred_mtime=2000.0); ok += 1          # re-login / refresh clears it
+    assert current(entry, "codex", cred_mtime=900.0); ok += 1
+    assert not current(entry, "codex", cred_mtime=2000.0); ok += 1
     assert not current(None, "codex"); ok += 1
     print(f"selftest: {ok} passed")
 
@@ -172,7 +153,7 @@ def main(argv):
     elif argv[:1] == ["selftest"]:
         selftest()
     else:
-        print(__doc__)
+        print(USAGE)
         return 2
     return 0
 

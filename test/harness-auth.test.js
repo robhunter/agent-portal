@@ -1,5 +1,4 @@
-// harness-auth.test.js — a recorded login failure turns a harness's status red
-// until its credentials file is rewritten (scripts/harness-auth.py records it).
+// harness-auth.test.js — a recorded login failure reports not logged in until credentials are rewritten.
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -47,7 +46,7 @@ test('a failure newer than the credentials file reads as login failed', async ()
 
 test('rewriting the credentials (a new login) clears the failure', async () => {
   const { root, home, config } = setup();
-  recordFailure(root, 1000);    // long before the file was written
+  recordFailure(root, 1000);
   assert.strictEqual((await status(config)).loggedIn, true);
   const auth = path.join(home, '.codex', 'auth.json');
   recordFailure(root, fs.statSync(auth).mtimeMs / 1000 + 60);
