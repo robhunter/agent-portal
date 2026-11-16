@@ -343,6 +343,17 @@ set -e
 
 step "harness finished (exit=$HARNESS_EXIT, attempts=$RETRY)"
 
+# Record harness login failures from this cycle's logs; a successful cycle is scanned strictly.
+_auth_scan=(scan)
+[ "$HARNESS_EXIT" -eq 0 ] && _auth_scan=(scan --strict)
+python3 "$FRAMEWORK_DIR/scripts/harness-auth.py" "${_auth_scan[@]}" "$DATA_DIR" \
+    "$CYCLE_LOG_DIR/${CYCLE_TS}".log "$CYCLE_LOG_DIR/${CYCLE_TS}"-attempt*.log 2>/dev/null \
+  | while IFS= read -r line; do
+      step "harness login failed — $line"
+      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" error \
+        "Harness login failed (${line%%:*}): log in again. ${line#*: }" || true
+    done || true
+
 # ── PER-CYCLE COST TRACKING (continued) ──
 # Take the @end snapshot, write cost.yaml, spawn reconciliation. Done
 # even on harness failure — cycles that fail still consume tokens.
