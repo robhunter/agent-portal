@@ -343,6 +343,20 @@ set -e
 
 step "harness finished (exit=$HARNESS_EXIT, attempts=$RETRY)"
 
+# A harness that cannot log in fails every cycle while its credentials file
+# still looks fine. Record what it said, so the portal stops reporting it as
+# authenticated, and say so once in events. A successful cycle may quote these
+# messages, so it is scanned only for Codex's own timestamped error lines.
+_auth_scan=(scan)
+[ "$HARNESS_EXIT" -eq 0 ] && _auth_scan=(scan --strict)
+python3 "$FRAMEWORK_DIR/scripts/harness-auth.py" "${_auth_scan[@]}" "$DATA_DIR" \
+    "$CYCLE_LOG_DIR/${CYCLE_TS}".log "$CYCLE_LOG_DIR/${CYCLE_TS}"-attempt*.log 2>/dev/null \
+  | while IFS= read -r line; do
+      step "harness login failed — $line"
+      bash "$FRAMEWORK_DIR/scripts/log-event.sh" "$AGENT_DIR" error \
+        "Harness login failed (${line%%:*}): log in again. ${line#*: }" || true
+    done
+
 # ── PER-CYCLE COST TRACKING (continued) ──
 # Take the @end snapshot, write cost.yaml, spawn reconciliation. Done
 # even on harness failure — cycles that fail still consume tokens.
