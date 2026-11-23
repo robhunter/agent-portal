@@ -13,6 +13,18 @@ cron-file: /etc/cron.d/my-agent      # cron file path
 cron-schedule: "0 */2 * * *"         # cron schedule expression
 timezone: America/Los_Angeles        # optional: TZ for timestamps (default: container's TZ)
 
+# Optional: wake when work changes instead of only on the cron schedule.
+# start.sh then supervises scripts/poller.sh, which runs `command` in the agent
+# dir every `interval-seconds`. The command prints one key per due thing and
+# exits 0 (empty output = nothing due). A cycle starts when the lock is free and
+# the set of keys changes, or after `retry-seconds` if a cycle left the same set
+# due. The cron switch turns polling off too; keep a slow cron as the backstop.
+# poll:
+#   command: python3 tools/work.py due
+#   interval-seconds: 60               # default 60
+#   retry-seconds: 1800                # default 1800
+#   timeout-seconds: 300               # default 300
+
 # Prompts — multi-line text piped to Claude on each cycle type.
 # read-config.js writes these to temp files and outputs the file path.
 wake-prompt: |
