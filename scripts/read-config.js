@@ -74,6 +74,16 @@ const scalars = {
   FRAMEWORK_LAST_KNOWN_GOOD: doc['framework-last-known-good'],
 };
 
+// Optional `poll:` block — when it names a command, start.sh supervises
+// scripts/poller.sh, which wakes the agent when that command's output changes.
+const poll = (doc.poll && typeof doc.poll === 'object') ? doc.poll : {};
+Object.assign(scalars, {
+  AGENT_POLL_COMMAND: poll.command,
+  AGENT_POLL_INTERVAL: poll['interval-seconds'],
+  AGENT_POLL_RETRY: poll['retry-seconds'],
+  AGENT_POLL_TIMEOUT: poll['timeout-seconds'],
+});
+
 for (const [key, val] of Object.entries(scalars)) {
   console.log(`${key}=${shellEscape(val)}`);
 }

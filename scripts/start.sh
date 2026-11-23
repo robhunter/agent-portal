@@ -130,6 +130,12 @@ else
   log "TELEGRAM_TOKEN or TELEGRAM_CHAT_ID not set — skipping Telegram poller"
 fi
 
+# Supervise the work poller if agent.yaml configures one
+if [ -n "$AGENT_POLL_COMMAND" ]; then
+  log "Supervising poller (every ${AGENT_POLL_INTERVAL:-60}s: $AGENT_POLL_COMMAND)..."
+  supervise "poller" bash "$FRAMEWORK_DIR/scripts/poller.sh" "$AGENT_DIR"
+fi
+
 # Run post-start hooks
 bash "$FRAMEWORK_DIR/scripts/run-hooks.sh" "$FRAMEWORK_DIR" "$AGENT_DIR" post-start
 
